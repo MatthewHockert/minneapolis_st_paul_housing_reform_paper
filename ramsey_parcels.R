@@ -76,17 +76,11 @@ layer_name_pattern <- "Parcels2015Ramsey"
 file_path <- paste0(base_file_path, year)
 layer_name <- gsub("2015", year, layer_name_pattern)
 
-# Load the shapefile for the specific year
-library(sf)
-
 ramsey_data <- st_read(dsn = file_path, layer = layer_name)
 st_paul <- subset(ramsey_data, CITY %in% c("Saint Paul"))
 plot(st_paul$geometry)
-
-
-
-
-
+validity_check <- st_is_valid(st_paul)
+st_paul <- st_paul[validity_check, ]
 
 
 
