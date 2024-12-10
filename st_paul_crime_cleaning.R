@@ -5,11 +5,12 @@ library(ggplot2)
 
 
 crime <- st_read("/Users/matthewhockert/Desktop/Personal Info/st_paul_housing_crime/Crime_Incident_Report/Crime_Incident_Report.shp")
-
+crime <- st_drop_geometry(crime)
 crime$DATE <- as.Date(crime$DATE, format = "%Y-%m-%d")
 
 crime <- crime %>%
-  mutate(Month = format(DATE, "%Y-%m"))
+  mutate(Month = format(DATE, "%Y-%m"),
+         Year = format(DATE, "%Y"))
 
 aggregated_data <- crime %>%
   group_by(INCIDENT, Month) %>%
@@ -33,10 +34,12 @@ ggplot(filtered_data, aes(x = Month, y = Count, color = INCIDENT, group = INCIDE
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 
+crime_nhood <- merge(crime,district_councils,by.x = "NEIGHBORHO",by.y="districtnu")
+
 #### neighborhood ####
 
 aggregated_data_nhood <- crime %>%
-  group_by(INCIDENT, Month, NEIGHBOR_1) %>%
+  group_by(NEIGHBORHO, Year, NEIGHBOR_1) %>%
   summarise(Count = n())
 
 filtered_data_nhood <- aggregated_data_nhood %>%
@@ -144,6 +147,44 @@ mapview::mapview(crime_sf, color = "blue", layer.name = "Geocoded Data") +
   mapview::mapview(crime_sf_x, color = "red", layer.name = "Unmatched Data")
 
 
+
+
+
+#### Batch geocode ####
+
+library(parallel)
+library(dplyr)
+library(sf)
+library(censusxy)
+
+geocode_batch <- function(data) {
+  tryCatch({
+    geocoded <- cxy_geocode(data, street = "BLOCK", city = "city", state = "state", class = "sf")
+    geocoded
+  }, error = function(e) {
+    warning("Geocoding failed for a batch.")
+    data$geometry <- NA
+    st_as_sf(data)
+  })
+}
+
+dates <- unique(crime$DATE)
+crime_split <- split(crime, crime$DATE)
+
+cl <- makeCluster(detectCores() - 3) 
+clusterExport(cl, c("geocode_batch", "crime_split", "cxy_geocode"))
+clusterEvalQ(cl, library(censusxy))
+clusterEvalQ(cl, library(sf))
+
+crime_geocoded <- parLapply(cl, crime_split, geocode_batch)
+stopCluster(cl)
+
+crime_sf <- bind_rows(crime_geocoded)
+
+crime_sf <- st_as_sf(crime_sf)
+
+print(nrow(crime_sf))
+beep()
 
 
 

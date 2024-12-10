@@ -82,8 +82,83 @@ plot(st_paul$geometry)
 validity_check <- st_is_valid(st_paul)
 st_paul <- st_paul[validity_check, ]
 
+st_paul <- st_paul %>%
+  mutate(geometry = st_centroid(geometry))
 
 
+crime_nhood <- st_as_sf(crime_nhood)
+st_paul <- st_transform(st_paul,4326)
+st_paul_nhood <- st_intersection(st_paul,district_councils)
 
+rental_parcels <- st_paul_nhood %>%
+  mutate(
+    is_rental = ifelse(
+      NUM_UNITS > 1 & USE1_DESC %in% c("Res 2-3 units", "Apt 4+ units"), 1, 0
+    )
+  )
 
+rci_data <- rental_parcels %>%
+  group_by(districtnu) %>% 
+  summarise(
+    total_parcels = n(),
+    rental_parcels = sum(is_rental, na.rm = TRUE),
+    RCI = (rental_parcels / total_parcels)*100
+  )
+rci_data <- st_drop_geometry(rci_data)
 
+rci_crime_nhood <- merge(aggregated_data_nhood,rci_data,by.x = "NEIGHBORHO",by.y="districtnu")
+rci_crime_nhood$post <- ifelse(rci_crime_nhood$Year >2020, 1,0)
+
+ggplot(rci_crime_nhood, aes(x = RCI, y = Count, color = as.factor(NEIGHBORHO))) +
+  geom_point(size = 1) +
+  facet_wrap(~Year)+
+  geom_smooth(aes(color = NEIGHBORHO), method = "lm", se = FALSE, linetype = "solid")+
+  labs(
+    title = "Relationship Between RCI and Count",
+    x = "Rent Control Intensity (RCI)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+# ggplot(rci_crime_nhood, aes(x = RCI, y = Count, color = as.factor(NEIGHBORHO))) +
+#   geom_line(size = 1) +
+#   facet_wrap(~Year)+
+#   geom_smooth(aes(color = NEIGHBORHO), method = "lm", se = FALSE, linetype = "solid")+
+#   labs(
+#     title = "Relationship Between RCI and Count",
+#     x = "Rent Control Intensity (RCI)",
+#     y = "Count"
+#   ) +
+#   theme_minimal()
+
+ggplot(rci_crime_nhood, aes(x = RCI)) +
+  geom_histogram() +
+  facet_wrap(~Year)+
+  labs(
+    title = "Relationship Between RCI and Count",
+    x = "Rent Control Intensity (RCI)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+ggplot(rci_crime_nhood, aes(x = Count)) +
+  geom_histogram() +
+  facet_wrap(~Year)+
+  labs(
+    title = "Relationship Between RCI and Count",
+    x = "Rent Control Intensity (RCI)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+summary(lm(Count ~ RCI*post + as.factor(NEIGHBORHO)+ as.factor(Year), rci_crime_nhood))
+
+### districts ####
+
+district_councils <- st_read("District_Councils_3386664414246726701")
+district_councils <- st_transform(district_councils,4326)
+print(unique(district_councils$districtnu))
+names(district_councils)
+
+district_councils <- subset(district_councils, select = c("districtnu", "planning_1"))
+district_councils <- st_as_sf(district_councils)
