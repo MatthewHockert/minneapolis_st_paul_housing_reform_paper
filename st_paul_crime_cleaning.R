@@ -39,7 +39,7 @@ crime_nhood <- merge(crime,district_councils,by.x = "NEIGHBORHO",by.y="districtn
 #### neighborhood ####
 
 aggregated_data_nhood <- crime %>%
-  group_by(NEIGHBORHO, Year, NEIGHBOR_1) %>%
+  group_by(NEIGHBORHO, Year, INCIDENT) %>%
   summarise(Count = n())
 
 filtered_data_nhood <- aggregated_data_nhood %>%
