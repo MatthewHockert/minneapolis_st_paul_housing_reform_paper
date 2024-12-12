@@ -82,7 +82,7 @@ beep()
 
 
 # 
-year <- 2022  # Replace with your desired year
+year <- 2022 
 base_file_path <- "/Users/matthewhockert/Desktop/HCRA/shp_plan_regonal_parcels_"
 layer_name_pattern <- "Parcels2022Ramsey"
 
@@ -92,6 +92,80 @@ layer_name <- gsub("2022", year, layer_name_pattern)
 
 ramsey_data_15 <- st_read(dsn = file_path, layer = layer_name)
 names(ramsey_data_15)
+
+
+#### 2023 and 2024 ####
+
+year <- 2023  
+base_file_path <- "/Users/matthewhockert/Desktop/Personal Info/minneapolis_st_paul_housing_reform_paper/fgdb_plan_regonal_parcels_"
+layer_name_pattern <- "Parcels2023Ramsey.lyr"
+
+file_path <- paste0(base_file_path, year)
+layer_name <- gsub("2023", year, layer_name_pattern)
+
+ramsey_data_23 <- st_read(dsn = file_path, layer = layer_name)
+names(ramsey_data_23)
+
+ramsey_data_23 <- st_read("/Users/matthewhockert/Downloads/fgdb_plan_regonal_parcels_2023/plan_regonal_parcels_2023.gdb",layer="Parcels2023Ramsey")
+st_paul_23 <- subset(ramsey_data_23, CTU_NAME %in% c("Saint Paul") & !(COUNTY_PIN %in% c("Water", "Undetermined RoW", "State RoW", "Pedestrian - Municipal",
+                                                                                         "Pedestrian", "Park", "Municipal RoW", "Metes & Bounds",
+                                                                                         "Lot", "Federal RoW", "Drainage", "Ditch - Judicial",
+                                                                                         "Ditch - County", "County RoW", "C94", "C92",
+                                                                                         "C91", "C90", "C89", "C88",
+                                                                                         "C87", "C86", "C84", "C83",
+                                                                                         "C78", "C76", "C75", "C74",
+                                                                                         "C70", "C69", "C60", "C59",
+                                                                                         "C585", "C58", "C57", "C562",
+                                                                                         "C56", "C55", "C54", "C45",
+                                                                                         "C44", "C43", "C42", "C41",
+                                                                                         "C40", "C39", "C107", "C100",
+                                                                                         "C")))
+print(unique(ramsey_data_23$PIN_2))
+
+st_paul_23 <- st_paul_23[grep("-\\d+$", st_paul_23$PIN),]
+st_paul_23$PIN_2 <- sub("^[^-]*-", "", st_paul_23$PIN)
+
+st_paul_23 <- st_paul_23 %>%
+  rename(geometry = Shape)
+
+st_paul_23 <- st_as_sf(st_paul_23)
+st_paul_23 <- st_transform(st_paul_23,4326)
+
+st_paul_23 <- st_cast(st_paul_23, "MULTIPOLYGON", warn = FALSE)
+
+st_paul_23 <- st_make_valid(st_paul_23)
+
+# Identify invalid geometries
+invalid <- which(!st_is_valid(st_paul_23))
+if (length(invalid) > 0) {
+  print(invalid) # View problematic geometries
+  st_paul_23 <- st_cast(st_paul_23, "POLYGON", warn = FALSE) # Fix with casting
+}
+st_paul_23 <- st_paul_23[-invalid, ]
+# Transform to a projected CRS (if needed)
+st_paul_23 <- st_transform(st_paul_23, 4326)
+
+# Recalculate centroids
+st_paul_23 <- st_paul_23 %>%
+  mutate(geometry = st_centroid(geometry))
+
+names(st_paul_23)
+
+st_paul_23$USE1_DESC <-st_paul_23$USECLASS1
+st_paul_23$CITY <- st_paul_23$CTU_NAME
+st_paul_23$CITY_MERGED <- st_paul_23$CTU_NAME
+st_paul_23$year <- 2023
+st_paul_23$COUNTY_ID <- st_paul_23$COUNTY_PIN
+
+# correct names
+st_paul_23_nhood<- st_intersection(st_paul_23,district_councils)
+common_cols <- intersect(colnames(st_paul_23_nhood), colnames(st_paul_nhood))
+st_paul_23_subset <- st_paul_23_nhood[, common_cols]
+names(st_paul_23_subset)
+names(st_paul_nhood)
+missing_cols <- setdiff(names(st_paul_nhood), names(st_paul_23_subset))
+missing_cols
+
 
 # years <- 2015:2022
 # base_file_path <- "/Users/matthewhockert/Desktop/HCRA/shp_plan_regonal_parcels_"
@@ -170,10 +244,12 @@ beep()
 #   ungroup()
 # beep()
 
+st_paul_combined <- rbind(st_paul_nhood,st_paul_23_subset)
+
 current_year <- 2023
 exemption_year_threshold <- current_year - 20  # Properties built after this year are exempt
 
-unique_geometries <- st_paul_nhood %>%
+unique_geometries <- st_paul_combined %>%
   group_by(year) %>%
   distinct(geometry, .keep_all = TRUE) %>%  # Keep only unique geometries within each year
   ungroup()
@@ -181,7 +257,7 @@ unique_geometries <- st_paul_nhood %>%
 rental_parcels <- unique_geometries %>%
   mutate(
     is_rental = ifelse(
-      # Pre-2017 dwelling types
+      # Check for relevant dwelling types
       DWELL_TYPE %in% c(
         "DOUBLE DWELLING", "TWO FAMILY DWELLING", "THREE FAMILY DWELLING",
         "APARTMENTS 1-9 UNITS", "APARTMENTS 10-19 UNITS", 
@@ -191,10 +267,14 @@ rental_parcels <- unique_geometries %>%
         "APARTMENTS 50-99 RENTAL UNITS", "APARTMENTS 7-19 RENTAL UNITS",
         "APARTMENTS 4-6 RENTAL UNITS", "ASSISTED LIVING APT COMPLEX",
         "TWO FAMILY DWELLING - SIDE/SI", "TWO FAMILY DWELLING - UP/DWN"
-      ) & 
-        YEAR_BUILT <= exemption_year_threshold,  # Exclude exempt properties
-      1,
-      0
+      ),
+      # Apply year-specific logic
+      ifelse(
+        year == 2023,
+        ifelse(YEAR_BUILT <= exemption_year_threshold, 1, 0),  # Exclude exempt properties
+        1  # For other years, set as rental
+      ),
+      0  # Not a relevant dwelling type
     )
   )
 
@@ -448,7 +528,7 @@ dwelling_table <- standardized_dwelling %>%
   ) 
 
 #### Methods ####
-rci_crime_nhood <- merge(aggregated_data_nhood,rci_data,by.x = c("NEIGHBORHO","Year"),by.y=c("districtnu","year"))
+rci_crime_nhood <- merge(aggregated_crime_nhood,rci_data,by.x = c("NEIGHBORHO","Year"),by.y=c("districtnu","year"))
 rci_crime_nhood$post <- ifelse(rci_crime_nhood$Year >2020, 1,0)
 rci_crime_nhood <- subset(rci_crime_nhood, !is.na(Year))
 
@@ -462,13 +542,39 @@ rci_crime_nhood <- subset(rci_crime_nhood, !is.na(Year))
 # [22] "Other"                      "Proactive Foot Patrol"      "0"                         
 # [25] "THEFT"                     
 
-ggplot(subset(rci_crime_nhood,INCIDENT=="Auto Theft"), aes(x = RCI, y = Count, color = as.factor(NEIGHBORHO))) +
+ggplot(subset(rci_crime_nhood,INCIDENT=="Agg. Assault"), aes(x = RCI, y = Count, color = as.factor(NEIGHBORHO))) +
   geom_point(size = 1) +
   geom_text(aes(label = NEIGHBORHO), hjust = -0.2, vjust = -0.5, size = 2.5) +
   facet_wrap(~Year, scales = "fixed")+
   geom_smooth(aes(color = NEIGHBORHO), method = "lm", se = T, linetype = "solid")+
   labs(
     title = "Relationship Between RCI and Theft",
+    x = "Rent Control Intensity (RCI)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+slopes <- rci_crime_nhood %>%
+  # filter(INCIDENT == "Homicide") %>%
+  group_by(Year) %>%
+  summarise(
+    slope = round(coef(lm((Count) ~ RCI))[2], 2),  # Extract the slope from the linear model
+    .groups = 'drop'
+  )
+
+# Merge slopes
+rci_crime_nhood_with_slopes <- rci_crime_nhood %>%
+  # filter(INCIDENT == "Homicide") %>%
+  left_join(slopes, by = c("Year"))
+
+ggplot(rci_crime_nhood_with_slopes, aes(x = RCI, y = (Count), color = as.factor(NEIGHBORHO))) +
+  geom_point(size = 1) +
+  geom_text(aes(label = NEIGHBORHO), hjust = -0.2, vjust = -0.5, size = 2.5) +  # Add neighborhood labels
+  geom_text(data = slopes, aes(x = 15, y = 0, label = paste0("Slope: ", slope)), inherit.aes = FALSE, size = 3, hjust = 1) +  # Add slope labels
+  facet_wrap(~Year, scales = "fixed") +
+  geom_smooth(aes(color = NEIGHBORHO), method = "lm", se = TRUE, linetype = "solid") +
+  labs(
+    title = "Relationship Between RCI and Homicide",
     x = "Rent Control Intensity (RCI)",
     y = "Count"
   ) +
@@ -492,13 +598,16 @@ ggplot(rci_crime_nhood, aes(x = Year, y = Count,group = as.factor(NEIGHBORHO),co
 #   theme_minimal()
 
 ggplot(rci_crime_nhood, aes(x = RCI)) +
-  geom_histogram() +
+  geom_histogram(bins = 40) +
+  scale_x_continuous(breaks = c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20)) +
   labs(
-    title = "Relationship Between RCI",
+    title = "Distribution of Rent Control Intensity (RCI)",
     x = "Rent Control Intensity (RCI)",
-    y = "Rent Control Intensity (RCI)"
+    y = "Frequency"
   )
-
+# 3. Top 20% vs. Rest:
+#   •	Define High RCI as the top 20% of neighborhoods with the highest RCI (e.g., RCI ≥ 15).
+# •	Define Low RCI as the remaining 80%.
 ggplot(rci_crime_nhood, aes(x = Count, color = NEIGHBORHO)) +
   geom_histogram() +
   facet_wrap(~Year)+
@@ -509,8 +618,129 @@ ggplot(rci_crime_nhood, aes(x = Count, color = NEIGHBORHO)) +
   ) +
   theme_minimal()
 
+# MEDIAN
+pre_policy_years <- 2014:2023
+# Create high vs. low RCI groups
+rci_crime_nhood <- rci_crime_nhood %>%
+  mutate(
+    RCI_group = ifelse(RCI > median(RCI, na.rm = TRUE), "High RCI", "Low RCI")
+  )
 
-summary(lm(Count ~ RCI*post, subset(rci_crime_nhood,INCIDENT=="Auto Theft")))
+# Aggregate data by RCI group and year
+parallel_trends_data <- rci_crime_nhood %>%
+  filter(Year %in% pre_policy_years) %>%
+  group_by(RCI_group, Year) %>%
+  summarise(
+    mean_crime = mean(Count, na.rm = TRUE),
+    .groups = "drop"
+  )
+ggplot(parallel_trends_data, aes(x = Year, y = mean_crime, group = RCI_group,color = RCI_group)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  labs(
+    title = "Parallel Trends in Crime count by RCI Group",
+    x = "Year",
+    y = "Mean Crime Count",
+    color = "RCI Group"
+  ) +
+  theme_minimal()
+
+
+## Quartiles
+
+rci_crime_nhood <- rci_crime_nhood %>%
+  group_by(Year) %>%
+  mutate(
+    RCI_Quartile = ntile(RCI, 4)  # Divide RCI into 4 quartiles
+  ) %>%
+  ungroup()
+
+# Prepare data for parallel trends graph
+parallel_trends_quartiles <- rci_crime_nhood %>%
+  group_by(Year, RCI_Quartile) %>%
+  summarise(
+    mean_crime_count = mean(Count, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+# Plot parallel trends for quartiles
+ggplot(parallel_trends_quartiles, aes(x = Year, y = mean_crime_count,group = as.factor(RCI_Quartile), color = as.factor(RCI_Quartile))) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  scale_color_brewer(palette = "Set1", name = "RCI Quartile") +
+  labs(
+    title = "Parallel Trends in Crime Rates by RCI Quartile",
+    x = "Year",
+    y = "Mean Crime Count"
+  ) +
+  theme_minimal()
+
+quartile_changes <- rci_crime_nhood %>%
+  group_by(NEIGHBORHO) %>%
+  summarise(
+    quartile_changes = n_distinct(RCI_Quartile),  
+    first_quartile = first(RCI_Quartile),        
+    last_quartile = last(RCI_Quartile)          
+  ) %>%
+  filter(quartile_changes > 1)  
+
+print(quartile_changes)
+
+changed_neighborhoods <- rci_crime_nhood %>%
+  filter(NEIGHBORHO %in% quartile_changes$NEIGHBORHO)
+
+ggplot(changed_neighborhoods, aes(x = Year, y = RCI_Quartile, group = NEIGHBORHO, color = as.factor(NEIGHBORHO))) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  scale_color_brewer(palette = "Set1", name = "Neighborhood") +
+  labs(
+    title = "Changes in RCI Quartiles Over Time",
+    x = "Year",
+    y = "RCI Quartile"
+  ) +
+  theme_minimal()
+
+
+## 20-80
+
+rci_percentiles <- quantile(rci_crime_nhood$RCI, probs = c(0.2, 0.8), na.rm = TRUE)
+
+rci_crime_nhood <- rci_crime_nhood %>%
+  mutate(
+    RCI_Group = case_when(
+      RCI >= rci_percentiles[2] ~ "Top 20%",
+      RCI <= rci_percentiles[1] ~ "Bottom 20%",
+      TRUE ~ "Middle 60%"
+    )
+  )
+
+rci_crime_nhood_filtered <- rci_crime_nhood %>%
+  filter(RCI_Group %in% c("Top 20%", "Bottom 20%"))
+
+parallel_trends_top_bottom <- rci_crime_nhood_filtered %>%
+  group_by(Year, RCI_Group) %>%
+  summarise(
+    mean_crime_count = mean(Count, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+ggplot(parallel_trends_top_bottom, aes(x = Year, y = mean_crime_count, group = RCI_Group, color = RCI_Group)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2) +
+  scale_color_manual(values = c("Top 20%" = "red", "Bottom 20%" = "blue")) +
+  labs(
+    title = "Parallel Trends in Crime Rates by RCI Group (Top 20% vs. Bottom 20%)",
+    x = "Year",
+    y = "Mean Crime Count",
+    color = "RCI Group"
+  ) +
+  theme_minimal()
+
+
+
+
+parallel_trends_quartiles$post <- ifelse(parallel_trends_quartiles$Year >2020,1,0)
+summary(lm(mean_crime_count ~ as.factor(RCI_Quartile)*post + as.factor(Year), parallel_trends_quartiles))
 
 
 

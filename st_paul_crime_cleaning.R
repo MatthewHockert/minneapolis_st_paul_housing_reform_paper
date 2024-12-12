@@ -38,8 +38,12 @@ crime_nhood <- merge(crime,district_councils,by.x = "NEIGHBORHO",by.y="districtn
 
 #### neighborhood ####
 
-aggregated_data_nhood <- crime %>%
+aggregated_crime_incident <- crime %>%
   group_by(NEIGHBORHO, Year, INCIDENT) %>%
+  summarise(Count = n())
+
+aggregated_crime_nhood <- crime %>%
+  group_by(NEIGHBORHO, Year) %>%
   summarise(Count = n())
 
 filtered_data_nhood <- aggregated_data_nhood %>%
@@ -52,7 +56,7 @@ filtered_data_nhood <- filtered_data_nhood %>%
 
 filtered_data_nhood_1 <- filtered_data_nhood %>%
   filter(INCIDENT %in% c("Auto Theft", "Burglary", "Narcotics", "Robbery"))%>%
-  filter(NEIGHBOR_1 %in% c("12 - St. Anthony", "10 - Como","11 - Hamline/Midway", "7 - Thomas/Dale(Frogtown)","15 - Highland"))
+  filter(NEIGHBOR_1 %in% c("12 - St. Anthony", "8 - Summit/University","15 - Highland"))
 filtered_data_nhood_1$Month <- as.Date(paste0(filtered_data_nhood_1$Month, "-01"))
 
 ggplot(filtered_data_nhood_1, aes(x = Month, y = Count, color = NEIGHBOR_1, group = NEIGHBOR_1)) +
