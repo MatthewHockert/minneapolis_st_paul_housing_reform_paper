@@ -48,5 +48,14 @@ minneapolis_transit <- st_drop_geometry(minneapolis_geom_transit)
 st_paul_housing <- st_read("Housing_Production")
 Saint_Paul_City_Boundary <-st_read("Saint_Paul_City_Boundary")
 
+st_paul_zip_code_rents <- read_csv("Zip_zori_uc_sfrcondomfr_sm_month.csv")
+st_paul_zip_code_rents <- subset(st_paul_zip_code_rents,City == "Saint Paul")
+
+st_paul_zip_dist <- subset(rental_parcels,select = c("ZIP","districtnu",'planning_1'))
+st_paul_zip_dist <- st_drop_geometry(st_paul_zip_dist)
+st_paul_zip_dist <- unique(st_paul_zip_dist)
+st_paul_zip_dist <- subset(st_paul_zip_dist,!is.na(ZIP))
+
+
 
 

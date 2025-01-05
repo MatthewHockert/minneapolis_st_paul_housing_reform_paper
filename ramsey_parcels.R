@@ -381,7 +381,7 @@ st_paul_by_year <- st_paul %>%
 print(st_paul_by_year)
 
 rci_data <- rental_parcels %>%
-  group_by(districtnu,year) %>% 
+  group_by(ZIP,year) %>% 
   summarise(
     total_parcels = n(),
     rental_parcels = sum(is_rental, na.rm = TRUE),
@@ -389,7 +389,7 @@ rci_data <- rental_parcels %>%
   )
 rci_data <- st_drop_geometry(rci_data)
 
-ggplot(rci_data, aes(x = year, y = RCI, color = as.factor(districtnu), group = districtnu)) +
+ggplot(rci_data, aes(x = year, y = RCI, color = as.factor(ZIP), group = ZIP)) +
   geom_line(size = 1) +
   labs(
     title = "Rent Control Intensity (RCI) by Neighborhood",
@@ -398,6 +398,55 @@ ggplot(rci_data, aes(x = year, y = RCI, color = as.factor(districtnu), group = d
     color = "Neighborhood"
   ) +
   theme_minimal()
+
+
+#### rent data ####
+rent_long <- st_paul_zip_code_rents %>%
+  pivot_longer(cols = starts_with("20"), 
+               names_to = "Date", 
+               values_to = "Rent") %>%
+  mutate(Date = as.Date(Date, format = "%Y-%m-%d")) %>%
+  mutate(Year = as.numeric(format(Date, "%Y")))
+
+rent_long_avg <- rent_long %>%
+  # Extract Year from Date if not already done
+  mutate(Year = as.numeric(format(Date, "%Y"))) %>%
+  # Group by RegionName and Year to calculate the yearly average Rent
+  group_by(RegionName, Year) %>%
+  summarize(AvgRent = mean(Rent, na.rm = TRUE), .groups = "drop") %>%
+  # Calculate the percent change in yearly average rent
+  arrange(RegionName, Year) %>%
+  group_by(RegionName) %>%
+  mutate(PercentChangeAvgRent = (AvgRent - lag(AvgRent)) / lag(AvgRent) * 100) %>%
+  ungroup()
+
+
+ggplot(rent_long_avg %>% filter(!is.na(PercentChangeAvgRent)), 
+       aes(x = Year, y = PercentChangeAvgRent, color = RegionName, group = RegionName)) +
+  geom_line() +
+  geom_vline(xintercept = c(2021, 2022), linetype = "dashed") +  # Use numeric year for xintercept
+  labs(title = "Percent Change in Yearly Average Rent by Zip Code",
+       x = "Year",
+       y = "Percent Change in Rent (%)",
+       color = "Zip Code") +
+  theme_minimal()
+
+names(rent_long)
+names(rci_data)
+rent_long_rci <- merge(rent_long_avg, rci_data, 
+                       by.x = c("RegionName", "Year"), 
+                       by.y = c("ZIP", "year"))
+
+ggplot(rent_long_rci, aes(x = RCI, y = PercentChangeAvgRent)) +
+  geom_point(alpha = 0.6, color = "blue") +  # Add points with transparency for better visibility
+  geom_smooth(method = "lm", color = "red")+
+  labs(title = "Scatter Plot of Rent vs RCI",
+       x = "Rent Control Intensity (RCI)",
+       y = "Rent") +
+  # facet_wrap(~Year)
+  theme_minimal()
+
+
 
 #
 ##### 2 ######
@@ -528,7 +577,7 @@ dwelling_table <- standardized_dwelling %>%
   ) 
 
 #### Methods ####
-rci_crime_nhood <- merge(aggregated_crime_nhood,rci_data,by.x = c("NEIGHBORHO","Year"),by.y=c("districtnu","year"))
+rci_crime_nhood <- merge(aggregated_crime_nhood,rent_long_rci,by.x = c("NEIGHBORHO","Year"),by.y=c("districtnu","year"))
 rci_crime_nhood$post <- ifelse(rci_crime_nhood$Year >2020, 1,0)
 rci_crime_nhood <- subset(rci_crime_nhood, !is.na(Year))
 
