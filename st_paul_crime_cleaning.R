@@ -43,7 +43,7 @@ aggregated_crime_incident <- crime %>%
   summarise(Count = n())
 
 aggregated_crime_nhood <- crime %>%
-  group_by(NEIGHBORHO, Year) %>%
+  group_by(NEIGHBORHO,POLICE_GRI, Year) %>%
   summarise(Count = n())
 
 filtered_data_nhood <- aggregated_data_nhood %>%

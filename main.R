@@ -56,6 +56,41 @@ st_paul_zip_dist <- st_drop_geometry(st_paul_zip_dist)
 st_paul_zip_dist <- unique(st_paul_zip_dist)
 st_paul_zip_dist <- subset(st_paul_zip_dist,!is.na(ZIP))
 
+st_paul_zips <- st_read("shp_bdry_zip_code_tabulation_areas")
+# plot(st_paul_zips$geometry)
+st_paul_zips <- st_transform(st_paul_zips,4326)
+st_paul_zips <- st_intersection(st_paul_zips,Saint_Paul_City_Boundary)
+# plot(st_paul_zips$geometry)
+st_paul_zips <- subset(st_paul_zips,select = c("GEOID20","geometry"))
+st_paul_zips <- st_transform(st_paul_zips,4326)
+# st_paul_zips <- st_simplify(st_paul_zips, dTolerance = 10)
+
+ggplot() +
+  # Plot the ZIP codes
+  geom_sf(data = st_paul_zips, fill = "blue", alpha = 0.3, color = "black", size = 0.5) +
+  # Plot the district councils on top
+  geom_sf(data = district_councils, fill = NA, color = "red", size = 0.8)+
+  # geom_sf(data = subset(unique_geometries,year = 2022), color = "red")+
+  theme_minimal()
+ggplot() +
+  # Plot the ZIP codes
+  geom_sf(data = st_paul_zips, fill = "blue", alpha = 0.3, color = "black", size = 2) +
+  # Plot the district councils on top
+  geom_sf(data = district_councils, fill = NA, color = "red", size = 0.8) +
+  # geom_sf(data = st_paul_zips_dist, fill = NA, color = "green", size = 0.8) +
+  # Add ZIP code labels
+  geom_sf_text(data = st_paul_zips, aes(label = GEOID20), size = 3, color = "black") +
+  # Add district council names
+  geom_sf_text(data = district_councils, aes(label = planning_1), size = 2, color = "red") +
+  theme_minimal() +
+  labs(
+    title = "St. Paul ZIP Codes and District Councils",
+    subtitle = "Blue: ZIP Codes, Red: District Councils",
+    caption = "Data Source: St. Paul"
+  )
+
+st_paul_zips_dist <- st_intersection(st_paul_zips,district_councils)
+st_paul_zips_dist <- st_as_sf(st_paul_zips_dist)
 
 
 

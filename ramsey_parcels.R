@@ -364,6 +364,9 @@ pin_mapping_duplicates <- pin_mapping %>%
 
 #####
 
+rental_parcels$ZIP <- ifelse(rental_parcels$ZIP =="2344","55105",rental_parcels$ZIP)
+rental_parcels$ZIP <- ifelse(rental_parcels$ZIP =="05117","55117",rental_parcels$ZIP)
+
 # Check the number of rental vs non-rental parcels
 rental_by_year <- rental_parcels %>%
   group_by(year) %>%
@@ -381,7 +384,7 @@ st_paul_by_year <- st_paul %>%
 print(st_paul_by_year)
 
 rci_data <- rental_parcels %>%
-  group_by(ZIP,year) %>% 
+  group_by(ZIP,districtnu,year) %>% 
   summarise(
     total_parcels = n(),
     rental_parcels = sum(is_rental, na.rm = TRUE),
@@ -716,6 +719,7 @@ parallel_trends_quartiles <- rci_crime_nhood %>%
 ggplot(parallel_trends_quartiles, aes(x = Year, y = mean_crime_count,group = as.factor(RCI_Quartile), color = as.factor(RCI_Quartile))) +
   geom_line(size = 1) +
   geom_point(size = 2) +
+  geom_vline(xintercept = c("2021", "2022"), linetype = "dashed") +  
   scale_color_brewer(palette = "Set1", name = "RCI Quartile") +
   labs(
     title = "Parallel Trends in Crime Rates by RCI Quartile",
@@ -791,8 +795,63 @@ ggplot(parallel_trends_top_bottom, aes(x = Year, y = mean_crime_count, group = R
 parallel_trends_quartiles$post <- ifelse(parallel_trends_quartiles$Year >2020,1,0)
 summary(lm(mean_crime_count ~ as.factor(RCI_Quartile)*post + as.factor(Year), parallel_trends_quartiles))
 
+#### Aggregating rental prices, RCI, and crime data ####
 
 
+#	1.	Step 1: Merge the Police Grid Data with the Parcels Data
+#	Use the Neighborhood field as the common key.
+rci_crime_step1 <- merge(aggregated_crime_nhood,rci_data,by.x = c("NEIGHBORHO","Year"),by.y=c("districtnu","year"))
+
+# Check neighborhoods
+missing_nhoods_step1 <- setdiff(unique(aggregated_crime_nhood$NEIGHBORHO), unique(rci_crime_step1$NEIGHBORHO))
+print(missing_nhoods_step1)
+
+# Check years
+missing_years_step1 <- setdiff(unique(aggregated_crime_nhood$Year), unique(rci_crime_step1$Year))
+print(missing_years_step1)
+
+# 2.	Step 2: Merge the Combined Dataset with the Rental Prices Data
+# Use the Zip Code field as the common key.
+
+rci_crime_rents_step2 <- merge(rci_crime_step1,rent_long_avg,by.x = c("ZIP","Year"),by.y=c("RegionName","Year"),all.x = T)
+
+# Check ZIPs
+missing_zips_step2 <- setdiff(unique(rci_crime_step1$ZIP), unique(rci_crime_rents_step2$ZIP))
+print(missing_zips_step2)
+
+# Check years
+missing_years_step2 <- setdiff(unique(rci_crime_step1$Year), unique(rci_crime_rents_step2$Year))
+print(missing_years_step2)
+
+
+table(rci_crime_rents_step2$NEIGHBORHO, rci_crime_rents_step2$ZIP)
+
+
+ggplot(rci_crime_rents_step2, aes(x = PercentChangeAvgRent, y = RCI)) +
+  geom_point(alpha = 0.6, color = "blue") +  # Add points with transparency for better visibility
+  geom_smooth(method = "lm", color = "red") +
+  #facet_wrap(~Year)
+  theme_minimal()
+
+ggplot(rci_crime_rents_step2, aes(x = AvgRent, y = Count)) +
+  geom_point(alpha = 0.6, color = "blue") +  # Add points with transparency for better visibility
+  geom_smooth(method = "lm", color = "red") +
+  # facet_wrap(~Year)
+  theme_minimal()
+
+ggplot(rci_crime_rents_step2, aes(x = log(RCI+1), y = log(AvgRent+1))) +
+  geom_point(alpha = 0.6, color = "blue") +  # Add points with transparency for better visibility
+  geom_smooth(method = "lm", color = "red") +
+  # facet_wrap(~Year)
+  theme_minimal()
+
+summary(lm(log(AvgRent+1)~log(RCI+1)+log(Count+1)+ as.factor(NEIGHBORHO)+as.factor(Year),rci_crime_rents_step2))
+summary(lm(log(AvgRent+1)~log(Count+1)+ as.factor(NEIGHBORHO)+as.factor(Year),rci_crime_rents_step2))
+summary(lm(log(Count+1)~log(RCI+1)+ as.factor(NEIGHBORHO)+as.factor(Year),rci_crime_rents_step2))
+
+
+
+#
 ### districts ####
 
 district_councils <- st_read("District_Councils_3386664414246726701")
