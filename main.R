@@ -94,3 +94,6 @@ st_paul_zips_dist <- st_as_sf(st_paul_zips_dist)
 
 
 
+parcel_geometries <- st_read('/Users/matthewhockert/Desktop/Personal Info/minneapolis_st_paul_housing_reform_paper/vectorized_shapes.shp')
+plot(subset(parcel_geometries,DN == 15)$geometry)
+rm(parcel_geometries)

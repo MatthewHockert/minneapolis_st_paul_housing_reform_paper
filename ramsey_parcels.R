@@ -441,7 +441,7 @@ rent_long_rci <- merge(rent_long_avg, rci_data,
                        by.y = c("ZIP", "year"))
 
 ggplot(rent_long_rci, aes(x = RCI, y = PercentChangeAvgRent)) +
-  geom_point(alpha = 0.6, color = "blue") +  # Add points with transparency for better visibility
+  geom_point(alpha = 0.6, color = "blue") + 
   geom_smooth(method = "lm", color = "red")+
   labs(title = "Scatter Plot of Rent vs RCI",
        x = "Rent Control Intensity (RCI)",
@@ -594,7 +594,7 @@ rci_crime_nhood <- subset(rci_crime_nhood, !is.na(Year))
 # [22] "Other"                      "Proactive Foot Patrol"      "0"                         
 # [25] "THEFT"                     
 
-ggplot(subset(rci_crime_nhood,INCIDENT=="Agg. Assault"), aes(x = RCI, y = Count, color = as.factor(NEIGHBORHO))) +
+ggplot(rci_crime_nhood, aes(x = RCI, y = Count, color = as.factor(NEIGHBORHO))) +
   geom_point(size = 1) +
   geom_text(aes(label = NEIGHBORHO), hjust = -0.2, vjust = -0.5, size = 2.5) +
   facet_wrap(~Year, scales = "fixed")+
@@ -828,19 +828,19 @@ table(rci_crime_rents_step2$NEIGHBORHO, rci_crime_rents_step2$ZIP)
 
 
 ggplot(rci_crime_rents_step2, aes(x = PercentChangeAvgRent, y = RCI)) +
-  geom_point(alpha = 0.6, color = "blue") +  # Add points with transparency for better visibility
+  geom_point(alpha = 0.6, color = "blue") +  
   geom_smooth(method = "lm", color = "red") +
   #facet_wrap(~Year)
   theme_minimal()
 
 ggplot(rci_crime_rents_step2, aes(x = AvgRent, y = Count)) +
-  geom_point(alpha = 0.6, color = "blue") +  # Add points with transparency for better visibility
+  geom_point(alpha = 0.6, color = "blue") +  
   geom_smooth(method = "lm", color = "red") +
   # facet_wrap(~Year)
   theme_minimal()
 
-ggplot(rci_crime_rents_step2, aes(x = log(RCI+1), y = log(AvgRent+1))) +
-  geom_point(alpha = 0.6, color = "blue") +  # Add points with transparency for better visibility
+ggplot(rci_crime_rents_step2, aes(x = RCI, y = log(AvgRent+1))) +
+  geom_point(alpha = 0.6, color = "blue") +  
   geom_smooth(method = "lm", color = "red") +
   # facet_wrap(~Year)
   theme_minimal()
@@ -849,6 +849,38 @@ summary(lm(log(AvgRent+1)~log(RCI+1)+log(Count+1)+ as.factor(NEIGHBORHO)+as.fact
 summary(lm(log(AvgRent+1)~log(Count+1)+ as.factor(NEIGHBORHO)+as.factor(Year),rci_crime_rents_step2))
 summary(lm(log(Count+1)~log(RCI+1)+ as.factor(NEIGHBORHO)+as.factor(Year),rci_crime_rents_step2))
 
+
+#rci_crime_rents_step2
+# how does crime change for the high changing rent in zip codes 
+# 55101, 55102, 55104, 55106
+
+crime_zip <- rci_crime_rents_step2 %>%
+  group_by(Year, ZIP) %>%
+  summarize(
+    mean_count = mean(Count, na.rm = TRUE),  # Calculate the mean of Count
+    sd_count = sd(Count, na.rm = TRUE),     # Calculate the standard deviation of Count
+    RCI = mean(RCI, na.rm = TRUE)           # Calculate the mean of RCI
+  ) %>%
+  mutate(
+    z_score = (mean_count - mean(mean_count, na.rm = TRUE)) / sd(mean_count, na.rm = TRUE) # Calculate z-score
+  )
+
+
+crime_zip <- merge(crime_zip, rent_long_avg, by.x = c("Year","ZIP"),by.y = c("Year","RegionName"))
+
+ggplot(crime_zip, aes(x = RCI, y = z_score)) +
+  geom_point(alpha = 0.6, color = "blue") +  
+  geom_smooth(method = "lm", color = "red") +
+  facet_wrap(~Year)
+  theme_minimal()
+
+ggplot(crime_zip, aes(x = Year, y = RCI, group=ZIP,color=ZIP)) +
+  geom_line()+
+  # facet_wrap(~Year)
+  theme_minimal()
+
+# Higher changes in rent correlate to a decrease in crime counts.
+# The 
 
 
 #
