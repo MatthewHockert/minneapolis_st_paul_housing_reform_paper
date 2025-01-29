@@ -97,3 +97,56 @@ st_paul_zips_dist <- st_as_sf(st_paul_zips_dist)
 parcel_geometries <- st_read('/Users/matthewhockert/Desktop/Personal Info/minneapolis_st_paul_housing_reform_paper/vectorized_shapes.shp')
 plot(subset(parcel_geometries,DN == 15)$geometry)
 rm(parcel_geometries)
+
+### districts ####
+
+district_councils <- st_read("District_Councils_3386664414246726701")
+district_councils <- st_transform(district_councils,4326)
+print(unique(district_councils$districtnu))
+names(district_councils)
+
+district_councils <- subset(district_councils, select = c("districtnu", "planning_1"))
+district_councils <- st_as_sf(district_councils)
+
+
+#### vacancy data ####
+
+st_paul_vacancy <- read.csv("/Users/matthewhockert/Desktop/UMN/hennepin_conservation_easements/hcra_paper/usa_00010.csv")
+print(unique(st_paul_vacancy$MIGRATE1D))
+
+st_paul_vacancy <- subset(st_paul_vacancy,CITY == 6110)
+print(unique(st_paul_vacancy$incom))
+
+st_paul_vacancy_sum <- st_paul_vacancy %>%
+  # filter(MIGRATE1D !=0)%>%
+  group_by(YEAR,MIGRATE1D)%>%
+  summarize(id_count = n_distinct(SERIAL),
+            income = mean(INCWAGE,na.rm=T))
+
+ggplot(st_paul_vacancy_sum, aes(x = YEAR, y = income, color = as.factor(MIGRATE1D), group = MIGRATE1D)) +
+  geom_line(size = 1) +
+  geom_point(size = 2)
+
+st_paul_vacancy <- read.csv("/Users/matthewhockert/Desktop/UMN/hennepin_conservation_easements/hcra_paper/VacantBuildings_2951059575058115732.csv")
+st_paul_vacancy <- subset(st_paul_vacancy,!(DWELLING_TYPE == "Commercial"))
+st_paul_vacancy$year <- format(as.Date(st_paul_vacancy$VACANT_AS_OF, format = "%m/%d/%Y"), "%Y")
+
+st_paul_vacancy_sum <- st_paul_vacancy %>%
+  group_by(year,DWELLING_TYPE)%>%
+  summarize(DWELLING_TYPE_count = n_distinct(OBJECTID))
+
+ggplot(st_paul_vacancy_sum, aes(x = year, y = DWELLING_TYPE_count, color = as.factor(DWELLING_TYPE), group = DWELLING_TYPE)) +
+  geom_line(size = 1) +
+  geom_point(size = 2)
+
+#
+#### Minneapolis permits ####
+
+#minneapolis_permits <- st_read("/Users/matthewhockert/Downloads/shp_econ_residential_building_permts-2/ResidentialPermits.shp")
+
+
+
+
+
+
+

@@ -192,15 +192,3 @@ beep()
 
 
 
-#### Minneapolis permits ####
-
-#minneapolis_permits <- st_read("/Users/matthewhockert/Downloads/shp_econ_residential_building_permts-2/ResidentialPermits.shp")
-
-
-
-
-
-
-
-
-
