@@ -37,17 +37,17 @@ ggplot(rent_long_avg %>% filter(!is.na(PercentChangeAvgRent)),
 
 names(rent_long_avg)
 names(rci_data_zip)
-rent_long_rci <- merge(rent_long_avg, rci_data_zip, 
+rent_long_rci_zip <- merge(rent_long_avg, rci_data_zip, 
                        by.x = c("RegionName", "Year"), 
                        by.y = c("ZIP", "year"))
 
-names(rent_long_rci)
-hist(rent_long_rci$RCI)
-hist(rent_long_rci$AvgRent)
-hist(log(rent_long_rci$AvgRent))
-hist(rent_long_rci$PercentChangeAvgRent)
+names(rent_long_rci_zip)
+hist(rent_long_rci_zip$RCI)
+hist(rent_long_rci_zip$AvgRent)
+hist(log(rent_long_rci_zip$AvgRent))
+hist(rent_long_rci_zip$PercentChangeAvgRent)
 
-ggplot(rent_long_rci, aes(x = RCI, y = log(AvgRent))) +
+ggplot(rent_long_rci_zip, aes(x = RCI, y = log(AvgRent))) +
   geom_point(alpha = 0.6, color = "blue") + 
   geom_smooth(method = "lm", color = "red")+
   labs(title = "Scatter Plot of Rent vs RCI",
@@ -56,7 +56,7 @@ ggplot(rent_long_rci, aes(x = RCI, y = log(AvgRent))) +
   # facet_wrap(~Year)+
   theme_minimal()
 
-ggplot(rent_long_rci, aes(x = RCI, y = PercentChangeAvgRent)) +
+ggplot(rent_long_rci_zip, aes(x = RCI, y = PercentChangeAvgRent)) +
   geom_point(alpha = 0.6, color = "blue") + 
   geom_smooth(method = "lm", color = "red")+
   labs(title = "Scatter Plot of Rent vs RCI",
@@ -65,6 +65,23 @@ ggplot(rent_long_rci, aes(x = RCI, y = PercentChangeAvgRent)) +
   # facet_wrap(~Year)
   theme_minimal()
 
+rent_long_rci_zip_sub <- rent_long_rci_zip %>%
+  filter(Year %in% c(2021, 2022)) %>%
+  select(RegionName, Year, AvgRent, RCI) %>%
+  pivot_wider(names_from = Year, values_from = c(AvgRent, RCI)) %>%
+  mutate(
+    PercentChangeAvgRent = (AvgRent_2022 - AvgRent_2021) / AvgRent_2021 * 100,
+    PercentChangeRCI = (RCI_2022 - RCI_2021) / RCI_2021 * 100
+  )
+
+ggplot(rent_long_rci_zip_sub, aes(x = PercentChangeRCI, y = PercentChangeAvgRent)) +
+  geom_point(alpha = 0.6, color = "blue") + 
+  geom_smooth(method = "lm", color = "red")+
+  labs(title = "Scatter Plot of Rent vs RCI",
+       x = "Rent Control Intensity (RCI)",
+       y = "PercentChangeAvgRent") +
+  # facet_wrap(~Year)
+  theme_minimal()
 
 #### Methods ####
 rci_data_zip_nhood <- rental_parcels %>%
@@ -82,7 +99,7 @@ rent_long_rci_nhoods <- merge(rent_long_avg, rci_data_zip_nhood,
 names(rent_long_rci_nhoods)
 names(aggregated_crime_nhood)
 
-rci_crime_nhood <- merge(aggregated_crime_nhood,rent_long_rci_nhoods,by.x = c("NEIGHBORHO","Year"),by.y=c("districtnu","year"))
+rci_crime_nhood <- merge(aggregated_crime_nhood,rci_data_zip_nhood,by.x = c("NEIGHBORHO","Year"),by.y=c("districtnu","Year"))
 rci_crime_nhood$post <- ifelse(rci_crime_nhood$Year >2020, 1,0)
 rci_crime_nhood <- subset(rci_crime_nhood, !is.na(Year))
 
@@ -295,8 +312,87 @@ ggplot(parallel_trends_top_bottom, aes(x = Year, y = mean_crime_count, group = R
 
 
 parallel_trends_quartiles$post <- ifelse(parallel_trends_quartiles$Year >2020,1,0)
-summary(lm(mean_crime_count ~ as.factor(RCI_Quartile)*post + as.factor(Year), parallel_trends_quartiles))
 
+names(rci_data_nhood)
+rci_crime_nhood <- merge(aggregated_crime_nhood,rci_data_nhood,by.x = c("NEIGHBORHO","Year"),by.y=c("districtnu","year"))
+
+rci_crime_nhood_filtered$post <- ifelse(rci_crime_nhood_filtered$Year >2020,1,0)
+rci_crime_nhood_filtered$treated <- ifelse(rci_crime_nhood_filtered$RCI_Group =="Top 20%",1,0)
+
+
+names(rci_crime_nhood_filtered)
+summary(lm(Count ~ treated*post + as.factor(Year) + as.factor(NEIGHBORHO), rci_crime_nhood_filtered))
+
+
+### RCI by year ###
+rci_crime_nhood <- merge(aggregated_crime_nhood,rci_data_nhood,by.x = c("NEIGHBORHO","Year"),by.y=c("districtnu","year"))
+
+rci_crime_nhood <- rci_crime_nhood %>%
+  group_by(Year) %>%
+  mutate(
+    rci_percentiles = list(quantile(RCI, probs = c(0.2, 0.8), na.rm = TRUE)), # Compute percentiles per year
+    RCI_Group = case_when(
+      RCI >= rci_percentiles[[1]][2] ~ "Top 20%",
+      RCI <= rci_percentiles[[1]][1] ~ "Bottom 20%",
+      TRUE ~ "Middle 60%"
+    )
+  ) %>%
+  ungroup()
+
+rci_crime_nhood_filtered <- rci_crime_nhood %>%
+  filter(RCI_Group %in% c("Top 20%", "Bottom 20%"))
+
+rci_crime_nhood_filtered$post <- ifelse(rci_crime_nhood_filtered$Year >=2021,1,0)
+rci_crime_nhood_filtered$rent_vote <- ifelse(rci_crime_nhood_filtered$Year >=2021 & rci_crime_nhood_filtered$Year <=2022,1,0)
+rci_crime_nhood_filtered$post_rent_vote <- ifelse(rci_crime_nhood_filtered$Year >2022,1,0)
+rci_crime_nhood_filtered$treated <- ifelse(rci_crime_nhood_filtered$RCI_Group =="Top 20%",1,0)
+
+rci_crime_nhood_filtered <- rci_crime_nhood_filtered %>%
+  mutate(
+    phase = case_when(
+      Year < 2021 ~ "Pre-Vote",           # Before rent control was voted on
+      Year == 2021 ~ "Anticipation",      # Year of the vote, before implementation
+      Year >= 2022 ~ "Post-Implementation" # After rent control is enforced
+    ),
+    phase = factor(phase, levels = c("Pre-Vote", "Anticipation", "Post-Implementation")) # Set reference level
+  )
+# rci_crime_nhood_filtered$covid <-ifelse(rci_crime_nhood_filtered$Year >=2020,1,0)
+
+
+treated_nhoods_2020 <- rci_crime_nhood_filtered %>%
+  filter(Year == 2021, RCI_Group == "Top 20%") %>%
+  pull(NEIGHBORHO)  
+treated_nhoods_2020
+
+rci_crime_nhood_filtered <- rci_crime_nhood_filtered %>%
+  mutate(treated = ifelse(NEIGHBORHO %in% treated_nhoods_2020, 1, 0))
+
+hist(rci_crime_nhood_filtered$Count)
+hist(log(rci_crime_nhood_filtered$Count+1))
+hist(rci_crime_nhood_filtered$RCI)
+table(rci_crime_nhood_filtered$RCI)
+
+
+summary(lm(log(Count+1) ~ treated*phase+as.factor(Year) + as.factor(NEIGHBORHO), rci_crime_nhood_filtered))
+
+
+parallel_trends_top_bottom <- rci_crime_nhood_filtered %>%
+  group_by(Year, RCI_Group) %>%
+  summarise(
+    mean_crime_count = mean(Count, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+ggplot(parallel_trends_top_bottom, aes(x = Year, y = mean_crime_count, group = RCI_Group, color = RCI_Group)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2) +
+  labs(
+    title = "Parallel Trends in Crime Rates by RCI Group (2021) (Top 20% vs. Bottom 20%)",
+    x = "Year",
+    y = "Mean Crime Count",
+    color = "RCI Group"
+  ) +
+  theme_minimal()
 
 
 

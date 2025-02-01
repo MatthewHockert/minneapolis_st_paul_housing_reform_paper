@@ -43,6 +43,27 @@ aggregated_crime_incident <- crime %>%
   summarise(Count = n())
 
 aggregated_crime_nhood <- crime %>%
+  group_by(NEIGHBORHO, Year) %>%
+  summarise(Count = n())%>%
+  filter(!(is.na(Year)))%>%
+  arrange(NEIGHBORHO, Year) %>%  # Ensure correct ordering
+  mutate(
+    Count_Lag = lag(Count),  # Previous year's count
+    Percent_Change = (Count - Count_Lag) / Count_Lag * 100  # Percent change formula
+  )
+
+ggplot(aggregated_crime_nhood, aes(x = Year, y = Percent_Change, color = as.factor(NEIGHBORHO), group = NEIGHBORHO)) +
+  geom_line() +
+  geom_vline(xintercept = "2023", linetype = "dashed", color = "red") +   # Dashed line for 2023
+  geom_vline(xintercept = "2022", linetype = "dashed", color = "black") + # Dashed line for 2022
+  geom_vline(xintercept = "2020", linetype = "solid", color = "black") +  # Solid line for 2020
+  labs(title = "Incident Counts Over Time",
+       x = "Year",
+       y = "Count of Incidents") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+aggregated_crime_nhood_poli <- crime %>%
   group_by(NEIGHBORHO,POLICE_GRI, Year) %>%
   summarise(Count = n())
 
