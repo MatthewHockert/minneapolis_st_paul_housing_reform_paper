@@ -288,6 +288,22 @@ st_paul_combined <- st_paul_combined %>%
     )
   )
 beep()
+
+years <- unique(st_paul_combined$year)
+st_paul_combined_pdist <- data.frame()
+for(yearx in years){
+  print(yearx)
+  st_paul_combined_sub <- subset(st_paul_combined,year == yearx)
+  print(nrow(st_paul_combined_sub))
+  
+  intersection_result <- st_intersection(st_paul_combined_sub, st_paul_police_districts)
+  
+  st_paul_combined_pdist <- rbind(st_paul_combined_pdist, intersection_result)
+  
+}
+beep()
+
+#st_paul_combined_pdist <- st_intersection(st_paul_combined,st_paul_police_districts)
 # MOVE TO CALCULATE_RCI.R
 
 

@@ -99,6 +99,99 @@ ggplot(filtered_data_nhood_1, aes(x = Month, y = Count, color = NEIGHBOR_1, grou
 #[13] "10 - Como"                       "9 - West Seventh"                "7 - Thomas/Dale(Frogtown)"      
 #[16] "17 - Capitol River"              "12 - St. Anthony" 
 
+#### Police district ####
+
+aggregated_crime_incident <- crime %>%
+  group_by(POLICE_GRI, Year, INCIDENT) %>%
+  summarise(Count = n())
+
+aggregated_crime_pd <- crime %>%
+  group_by(POLICE_GRI, Year) %>%
+  summarise(Count = n())%>%
+  filter(!(is.na(Year)))%>%
+  arrange(POLICE_GRI, Year) %>%  # Ensure correct ordering
+  mutate(
+    Count_Lag = lag(Count),  # Previous year's count
+    Percent_Change = (Count - Count_Lag) / Count_Lag * 100  # Percent change formula
+  )
+
+ggplot(aggregated_crime_pd, aes(x = Year, y = Percent_Change, color = as.factor(POLICE_GRI), group = POLICE_GRI)) +
+  geom_line() +
+  geom_vline(xintercept = "2023", linetype = "dashed", color = "red") +   # Dashed line for 2023
+  geom_vline(xintercept = "2022", linetype = "dashed", color = "black") + # Dashed line for 2022
+  geom_vline(xintercept = "2020", linetype = "solid", color = "black") +  # Solid line for 2020
+  labs(title = "Incident Counts Over Time",
+       x = "Year",
+       y = "Count of Incidents") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
+aggregated_crime_nhood_poli <- crime %>%
+  group_by(NEIGHBORHO,POLICE_GRI, Year) %>%
+  summarise(Count = n())
+
+# Month
+aggregated_crime_month_pd <- crime %>%
+  group_by(POLICE_GRI, Month) %>%
+  summarise(Count = n())%>%
+  filter(!(is.na(Month)))%>%
+  arrange(POLICE_GRI, Month) %>%  # Ensure correct ordering
+  mutate(
+    Count_Lag = lag(Count),  # Previous year's count
+    Percent_Change = (Count - Count_Lag) / Count_Lag * 100  # Percent change formula
+  )
+
+aggregated_crime_month_pd <- aggregated_crime_month_pd %>%
+  mutate(Month = ym(Month),  # Convert to Date format
+         Year = year(Month)) 
+
+ggplot(aggregated_crime_month_pd, aes(x = Month, y = Percent_Change, color = as.factor(POLICE_GRI), group = POLICE_GRI)) +
+  geom_line() +
+  geom_vline(xintercept = "2023", linetype = "dashed", color = "red") +   # Dashed line for 2023
+  geom_vline(xintercept = "2022", linetype = "dashed", color = "black") + # Dashed line for 2022
+  geom_vline(xintercept = "2020", linetype = "solid", color = "black") +  # Solid line for 2020
+  labs(title = "Incident Counts Over Time",
+       x = "Year",
+       y = "Count of Incidents") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Quarter
+print(unique(crime$DATE))
+
+aggregated_crime_quarter_pd <- crime %>%
+  mutate(
+    Quarter = floor_date(ymd(DATE), "quarter"),  # Extract quarter start date
+    Year = year(Quarter)
+  ) %>%
+  group_by(POLICE_GRI, Quarter) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  filter(!is.na(Quarter)) %>%
+  arrange(POLICE_GRI, Quarter) %>%  # Ensure correct ordering
+  mutate(
+    Count_Lag = lag(Count),  # Previous quarter's count
+    Percent_Change = (Count - Count_Lag) / Count_Lag * 100  # Percent change formula
+  )
+
+aggregated_crime_quarter_pd <- aggregated_crime_quarter_pd %>%
+  mutate(Year = year(Quarter)) 
+# Step 2: Plot Percent Change Over Time by Quarter
+ggplot(aggregated_crime_quarter_pd, 
+       aes(x = Quarter, y = Percent_Change, color = as.factor(POLICE_GRI), group = POLICE_GRI)) +
+  geom_line() +
+  geom_vline(xintercept = as.Date("2023-01-01"), linetype = "dashed", color = "red") +  # Dashed line for 2023
+  geom_vline(xintercept = as.Date("2022-01-01"), linetype = "dashed", color = "black") + # Dashed line for 2022
+  geom_vline(xintercept = as.Date("2020-01-01"), linetype = "solid", color = "black") +  # Solid line for 2020
+  labs(title = "Incident Counts Over Time by Quarter",
+       x = "Year",
+       y = "Percent Change in Incidents") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+#
 #### geolocate ####
 
 # DOUBLE CHECK FOR FAILED DEPOTS

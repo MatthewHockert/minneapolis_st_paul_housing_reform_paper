@@ -139,6 +139,16 @@ ggplot(st_paul_vacancy_sum, aes(x = year, y = DWELLING_TYPE_count, color = as.fa
   geom_line(size = 1) +
   geom_point(size = 2)
 
+
+#### St Paul Police Districts #####
+st_paul_police_districts  <- st_read("/Users/matthewhockert/Desktop/UMN/hennepin_conservation_easements/police_districts.shp")
+plot(st_paul_police_districts$geometry)
+
+st_paul_police_districts <- st_make_valid(st_paul_police_districts)
+st_paul_police_districts <- st_simplify(st_paul_police_districts,dTolerance = 25)
+plot(st_paul_police_districts$geometry)
+
+
 #
 #### Minneapolis permits ####
 
