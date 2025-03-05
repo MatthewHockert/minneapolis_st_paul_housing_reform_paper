@@ -148,7 +148,14 @@ st_paul_police_districts <- st_make_valid(st_paul_police_districts)
 st_paul_police_districts <- st_simplify(st_paul_police_districts,dTolerance = 25)
 plot(st_paul_police_districts$geometry)
 
+st_paul_police_districts <- st_transform(st_paul_police_districts, crs = 26915)  # Example: UTM Zone 15N (meters)
 
+# Calculate area in square miles (1 square meter = 3.86102e-7 square miles)
+st_paul_police_districts <- st_paul_police_districts %>%
+  mutate(area_sq_miles = as.numeric(st_area(.)) * 3.86102e-7,
+         area_acres = as.numeric(st_area(.)) * 0.000247105)
+hist(st_paul_police_districts$area_acres)
+stp_acre <- st_drop_geometry(subset(st_paul_police_districts, select = c("id","area_acres")))
 #
 #### Minneapolis permits ####
 
