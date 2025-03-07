@@ -12,6 +12,31 @@ crime <- crime %>%
   mutate(Month = format(DATE, "%Y-%m"),
          Year = format(DATE, "%Y"))
 
+print(unique(crime$INCIDENT))
+
+
+crime <- crime %>%
+  mutate(
+    Crime_Type = case_when(
+      INCIDENT %in% c("Robbery", "Agg. Assault Dom.", "Agg. Assault", 
+                      "Simple Assault Dom.", "Simple Asasult Dom.", 
+                      "Discharge", "Rape", "Homicide") ~ "Violent",
+      
+      INCIDENT %in% c("Theft", "Auto Theft", "Vandalism", "Burglary", 
+                      "Arson", "Graffiti", "Narcotics", "Criminal Damage", 
+                      "Proactive Police Visit", "Community Engagement Event", 
+                      "Proactive Foot Patrol", "Community Event", "THEFT", "Other") ~ "Non-Violent",
+      
+      INCIDENT == "0" ~ NA_character_,  # Mark bad data as missing
+      
+      TRUE ~ "Unclassified"  # Catch anything not explicitly listed
+    )
+  )
+
+crime <- crime %>%
+  filter(!is.na(Crime_Type) & Crime_Type != "Unclassified")
+
+
 aggregated_data <- crime %>%
   group_by(INCIDENT, Month) %>%
   summarise(Count = n())
@@ -33,11 +58,29 @@ ggplot(filtered_data, aes(x = Month, y = Count, color = INCIDENT, group = INCIDE
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
+crime_summary <- crime %>%
+  group_by(DATE,Crime_Type) %>%
+  summarise(Total_Crimes = n(), .groups = "drop")
+
+ggplot(crime_summary, aes(x = DATE, y = Total_Crimes, color = Crime_Type, group = Crime_Type)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  labs(
+    title = "Violent vs. Non-Violent Crimes Over Time",
+    x = "Year",
+    y = "Total Crimes",
+    color = "Crime Type"
+  ) +
+  geom_vline(xintercept = as.Date("2023-01-01"), linetype = "dashed", color = "red") +
+  geom_vline(xintercept = as.Date("2021-11-01"), linetype = "dashed", color = "black") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 crime_nhood <- merge(crime,district_councils,by.x = "NEIGHBORHO",by.y="districtnu")
 
-#### neighborhood ####
 
+#### neighborhood ####
+str(crime)
 aggregated_crime_incident <- crime %>%
   group_by(NEIGHBORHO, Year, INCIDENT) %>%
   summarise(Count = n())
@@ -101,12 +144,23 @@ ggplot(filtered_data_nhood_1, aes(x = Month, y = Count, color = NEIGHBOR_1, grou
 
 #### Police district ####
 
+##### Year ----
 aggregated_crime_incident <- crime %>%
   group_by(POLICE_GRI, Year, INCIDENT) %>%
   summarise(Count = n())
 
 aggregated_crime_pd <- crime %>%
   group_by(POLICE_GRI, Year) %>%
+  summarise(Count = n())%>%
+  filter(!(is.na(Year)))%>%
+  arrange(POLICE_GRI, Year) %>%  # Ensure correct ordering
+  mutate(
+    Count_Lag = lag(Count),  # Previous year's count
+    Percent_Change = (Count - Count_Lag) / Count_Lag * 100  # Percent change formula
+  )
+
+aggregated_crime_pd_type <- crime %>%
+  group_by(POLICE_GRI, Year, Crime_Type) %>%
   summarise(Count = n())%>%
   filter(!(is.na(Year)))%>%
   arrange(POLICE_GRI, Year) %>%  # Ensure correct ordering
@@ -132,7 +186,7 @@ aggregated_crime_nhood_poli <- crime %>%
   group_by(NEIGHBORHO,POLICE_GRI, Year) %>%
   summarise(Count = n())
 
-# Month
+##### Month ----
 aggregated_crime_month_pd <- crime %>%
   group_by(POLICE_GRI, Month) %>%
   summarise(Count = n())%>%
@@ -158,7 +212,24 @@ ggplot(aggregated_crime_month_pd, aes(x = Month, y = Percent_Change, color = as.
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-# Quarter
+aggregated_crime_month_pd_type <- crime %>%
+  group_by(POLICE_GRI, Month,Crime_Type) %>%
+  summarise(Count = n())%>%
+  filter(!(is.na(Month)))%>%
+  arrange(POLICE_GRI, Month) %>%  # Ensure correct ordering
+  mutate(
+    Count_Lag = lag(Count),  # Previous year's count
+    Percent_Change = (Count - Count_Lag) / Count_Lag * 100  # Percent change formula
+  )
+
+aggregated_crime_month_pd_type <- aggregated_crime_month_pd_type %>%
+  mutate(Month = ym(Month),  # Convert to Date format
+         Year = year(Month)) 
+
+
+
+
+##### Quarter ----
 print(unique(crime$DATE))
 
 aggregated_crime_quarter_pd <- crime %>%
@@ -177,6 +248,7 @@ aggregated_crime_quarter_pd <- crime %>%
 
 aggregated_crime_quarter_pd <- aggregated_crime_quarter_pd %>%
   mutate(Year = year(Quarter)) 
+
 # Step 2: Plot Percent Change Over Time by Quarter
 ggplot(aggregated_crime_quarter_pd, 
        aes(x = Quarter, y = Percent_Change, color = as.factor(POLICE_GRI), group = POLICE_GRI)) +
@@ -189,6 +261,24 @@ ggplot(aggregated_crime_quarter_pd,
        y = "Percent Change in Incidents") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+aggregated_crime_quarter_pd_type <- crime %>%
+  mutate(
+    Quarter = floor_date(ymd(DATE), "quarter"),  # Extract quarter start date
+    Year = year(Quarter)
+  ) %>%
+  group_by(POLICE_GRI, Quarter,Crime_Type) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  filter(!is.na(Quarter)) %>%
+  arrange(POLICE_GRI, Quarter) %>%  # Ensure correct ordering
+  mutate(
+    Count_Lag = lag(Count),  # Previous quarter's count
+    Percent_Change = (Count - Count_Lag) / Count_Lag * 100  # Percent change formula
+  )
+
+aggregated_crime_quarter_pd_type <- aggregated_crime_quarter_pd_type %>%
+  mutate(Year = year(Quarter))
 
 
 #
