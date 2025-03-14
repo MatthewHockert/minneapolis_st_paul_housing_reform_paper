@@ -143,12 +143,14 @@ ggplot(st_paul_vacancy_sum, aes(x = year, y = DWELLING_TYPE_count, color = as.fa
 #### St Paul Police Districts #####
 st_paul_police_districts  <- st_read("/Users/matthewhockert/Desktop/UMN/hennepin_conservation_easements/police_districts.shp")
 plot(st_paul_police_districts$geometry)
+length(unique(st_paul_police_districts$id))
 
 st_paul_police_districts <- st_make_valid(st_paul_police_districts)
 st_paul_police_districts <- st_simplify(st_paul_police_districts,dTolerance = 25)
 plot(st_paul_police_districts$geometry)
 
 st_paul_police_districts <- st_transform(st_paul_police_districts, crs = 26915)  # Example: UTM Zone 15N (meters)
+length(unique(st_paul_police_districts$id))
 
 # Calculate area in square miles (1 square meter = 3.86102e-7 square miles)
 st_paul_police_districts <- st_paul_police_districts %>%

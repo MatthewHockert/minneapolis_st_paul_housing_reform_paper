@@ -2,6 +2,9 @@ library(dplyr)
 library(tidyr)
 library(ggplot2)
 library(fixest)
+library(sandwich)  # For robust SEs
+library(lmtest)
+options(max.print = 10000)
 
 #### renfixest#### rent data ####
 #Pulled from Main.R
@@ -584,6 +587,10 @@ ggplot(changed_neighborhoods, aes(x = Year, y = RCI_Quartile, group = POLICE_GRI
 
 rci_data_pd_year <- merge(rci_data_pd,stp_acre,by="id")
 hist(rci_data_pd_year$RCI)
+length(unique(rci_data_pd_year$id))
+
+ids_to_remove <- rci_data_pd$id[rci_data_pd$year == 2020 & rci_data_pd$RCI == 0]
+rci_data_pd_year <- rci_data_pd_year[!rci_data_pd_year$id %in% ids_to_remove, ]
 
 
 ggplot(filter(rci_data_pd_year,year ==2020), aes(x = RCI)) +
@@ -595,7 +602,7 @@ ggplot(filter(rci_data_pd_year,year ==2020), aes(x = RCI)) +
     y = "Frequency"
   )
 
-table(filter(rci_data_pd_year, year == 2020)$RCI_Group)
+
 
 # Calculate RCI percentiles by year
 rci_percentiles <- rci_data_pd_year %>%
@@ -612,6 +619,16 @@ rci_percentiles <- rci_data_pd_year %>%
 #     rci_percentiles_lo = ifelse(RCI < 15, 1, 0)
 #   )
 
+# rci_data_pd_year <- rci_data_pd_year %>%
+#   # left_join(rci_percentiles, by = "year") %>%
+#   mutate(
+#     RCI_Group = case_when(
+#       RCI >= 15 ~ "Top",
+#       RCI <= 15 ~ "Bottom",
+#       TRUE ~ "Middle"
+#     )
+#   )
+
 # Merge with the main dataset and assign RCI groups
 rci_data_pd_year <- rci_data_pd_year %>%
   left_join(rci_percentiles, by = "year") %>%
@@ -622,10 +639,16 @@ rci_data_pd_year <- rci_data_pd_year %>%
       TRUE ~ "Middle"
     )
   )
-
+table(filter(rci_data_pd_year, year == 2020)$RCI_Group)
 
 # Merge crime data
 rci_crime_year_pd<- merge(aggregated_crime_pd, rci_data_pd_year, by.x = c("POLICE_GRI", "Year"), by.y = c("id", "year"))
+rci_crime_year_pd <- merge(rci_crime_year_pd,traffic_stops_time,by.x = c("POLICE_GRI","Year"),by.y=c("POLICE_GRID_NUMBER","YEAR_OF_STOP"))
+plot(test_merge$RCI,test_merge$counts)
+hist(test_merge$counts)
+plot(log(test_merge$Count),log(test_merge$counts))
+
+length(unique(test_merge$POLICE_GRI))
 
 # Filter for top and bottom groups
 rci_crime_year_pd <- rci_crime_year_pd %>%
@@ -639,13 +662,25 @@ rci_crime_pd_filtered <- rci_crime_year_pd %>%
   filter(Year > 2017)
 rci_crime_pd_filtered$post <- ifelse(rci_crime_pd_filtered$Year >2020,1,0)
 
+
+hist(rci_crime_pd_filtered$Count)
+table(rci_crime_pd_filtered$Year)
+#Why am I missing districts in 2018 and 2019
+# drop or include?
+# And drop out in 2023 who is duplicated in 2023?
+
+
+rci_crime_pd_filtered%>%
+  group_by(Year)%>%
+  summarize(count = n_distinct(POLICE_GRI))
+
 # Parallel trends analysis
 parallel_trends_year <- rci_crime_pd_filtered %>%
   group_by(Year, treated) %>%
   summarise(
     mean_crime = mean(Count, na.rm = TRUE),
     mean_crime_acre = mean(crime_acre, na.rm = TRUE),
-    mean_crime_acre_log = mean(log(crime_acre + 1), na.rm = TRUE),
+    mean_crime_acre_log = mean(log(crime_acre), na.rm = TRUE),
     .groups = "drop"
   )
 
@@ -687,19 +722,13 @@ ggplot(parallel_trends_year, aes(x = Year, y = mean_crime_acre_log, group = trea
   theme_minimal()
 
 # Event study model
-event_study_model_year <- feols(crime_acre ~ i(Year, treated, ref = 2020) | as.factor(POLICE_GRI) + as.factor(Year), 
+event_study_model_year <- feols(Count ~ i(Year, treated, ref = 2020) | as.factor(POLICE_GRI) + as.factor(Year)+log(counts), 
                                 data = rci_crime_pd_filtered)
 
 summary(event_study_model_year)
 iplot(event_study_model_year, order = "Year")
 
-event_study_model_year <- feols(log(crime_acre+1) ~ i(Year, treated, ref = 2020) | as.factor(POLICE_GRI) + as.factor(Year), 
-                                data = rci_crime_pd_filtered)
-
-summary(event_study_model_year)
-iplot(event_study_model_year, order = "Year")
-
-event_study_model_year <- feols(log(Count+1) ~ i(Year, treated, ref = 2020) | as.factor(POLICE_GRI) + as.factor(Year), 
+event_study_model_year <- feols(log(Count) ~ i(Year, treated, ref = 2020) | as.factor(POLICE_GRI) + as.factor(Year)+log(counts), 
                                 data = rci_crime_pd_filtered)
 
 summary(event_study_model_year)
@@ -711,6 +740,16 @@ did_model <- feols(
 )
 summary(did_model)
 
+did_model <- lm(
+  log(Count) ~ post * treated + post +treated+ as.factor(POLICE_GRI) + as.factor(Year)+log(counts),
+  data = rci_crime_pd_filtered
+)
+summary(did_model)
+
+
+hist(rci_crime_pd_filtered$Count)
+table(rci_crime_pd_filtered$Count == 0) / nrow(rci_crime_pd_filtered)
+table(rci_crime_pd_filtered$crime_acre == 0) / nrow(rci_crime_pd_filtered)
 
 ##### Month ----
 
@@ -721,8 +760,10 @@ hist(stp_acre$area_acres)
 rci_data_pd_month <- merge(rci_data_pd,stp_acre,by="id")
 hist(rci_data_pd_month$RCI)
 
+rci_data_pd_month <- rci_data_pd_month[!rci_data_pd_month$id %in% ids_to_remove, ]
+
 ggplot(rci_data_pd_month, aes(x = RCI)) +
-  geom_histogram(bins = 40) +
+  geom_histogram(bins = 100) +
   scale_x_continuous() +
   labs(
     title = "Distribution of Rent Control Intensity (RCI)",
@@ -769,7 +810,10 @@ rci_data_pd_month <- rci_data_pd_month %>%
 rci_crime_month_pd <- merge(aggregated_crime_month_pd,subset(rci_data_pd_month,neighborhood != 17 & year >= 2018),by.x = c("POLICE_GRI","Year"),by.y=c("id","year"))
 # rci_crime_month_pd <- merge(aggregated_crime_month_pd,rci_data_pd,by.x = c("POLICE_GRI","Year"),by.y=c("id","year"))
 rci_crime_month_pd$crime_acre <- (rci_crime_month_pd$Count/rci_crime_month_pd$area_acres)*100
-hist(log(rci_crime_month_pd$crime_acre+1))
+hist(log(rci_crime_month_pd$crime_acre))
+names(rci_crime_month_pd)
+names(traffic_stops_month)
+rci_crime_month_pd <- merge(rci_crime_month_pd,traffic_stops_month,by = c("POLICE_GRI","Month"))
 
 # rci_crime_pd_filtered <- rci_crime_pd %>%
 #   filter(RCI_Group %in% c("Top 20%", "Bottom 20%"))
@@ -808,7 +852,7 @@ rci_crime_month_pd_filtered <- rci_crime_month_pd_filtered %>%
          reporting_diff = ifelse(Year < 2018, 1, 0))
 
 hist(rci_crime_month_pd_filtered$crime_acre)
-hist(log(rci_crime_month_pd_filtered$crime_acre+1))
+hist(log(rci_crime_month_pd_filtered$crime_acre))
 
 parallel_trends_month <- rci_crime_month_pd_filtered %>%
   group_by(Month, treated) %>%
@@ -816,7 +860,7 @@ parallel_trends_month <- rci_crime_month_pd_filtered %>%
     year = first(Year),
     mean_crime = mean(Count, na.rm = TRUE),
     mean_crime_acre = mean(crime_acre, na.rm = TRUE),
-    mean_crime_acre_log = mean(log(crime_acre+1), na.rm = TRUE),
+    mean_crime_acre_log = mean(log(crime_acre), na.rm = TRUE),
     .groups = "drop")
 
 ggplot(parallel_trends_month, aes(x = (Month), y = (mean_crime), group = treated, color = factor(treated))) +
@@ -855,28 +899,41 @@ ggplot(parallel_trends_month, aes(x = (Month), y = (mean_crime_acre_log), group 
   scale_color_manual(values = c("0" = "blue", "1" = "red")) +
   theme_minimal()
 
-event_study_model_month <- feols(crime_acre ~ i(Month, treated, ref = as.Date("2021-11-01")) |
-                                   as.factor(POLICE_GRI) + as.factor(Month), 
-                           data = rci_crime_month_pd_filtered)
+event_study_model_month <- feols(Count ~ i(Month, treated, ref = as.Date("2020-11-01")) |
+                                   as.factor(POLICE_GRI) + as.factor(Month)+log(counts), 
+                                 data = rci_crime_month_pd_filtered)
 
 summary(event_study_model_month)
 event_study_model_month$collin.var
 iplot(event_study_model_month)
+
+event_study_model_month <- feols(log(Count) ~ i(Month, treated, ref = as.Date("2020-11-01")) |
+                                   as.factor(POLICE_GRI) + as.factor(Month)+log(counts), 
+                                 data = rci_crime_month_pd_filtered)
+
+summary(event_study_model_month)
+event_study_model_month$collin.var
+iplot(event_study_model_month)
+
+
 # november 2021 - approved by voters
 # september 2022 - amended by voters
 # january 2023 - new changes to law
 
+
+table(rci_crime_month_pd_filtered$Count == 0)
+
 #12.584546
 
-did_model <- feols(
-  Count ~ post * treated + as.factor(POLICE_GRI) + as.factor(Month),
-  data = rci_crime_month_pd_filtered
-)
-
-summary(did_model)
+# did_model <- feols(
+#   Count ~ post * treated + as.factor(POLICE_GRI) + as.factor(Month),
+#   data = rci_crime_month_pd_filtered
+# )
+# 
+# summary(did_model)
 
 did_model <- lm(
-  log(crime_acre+1) ~post + treated+ post * treated + as.factor(POLICE_GRI) + as.factor(Month)
+  log(Count) ~ post + treated+ post * treated + as.factor(POLICE_GRI) + as.factor(Month)+log(counts),
   data = rci_crime_month_pd_filtered
 )
 summary(did_model)
@@ -886,6 +943,10 @@ coeftest(did_model, vcov = robust_se)
 
 ##### Quarter ----
 rci_data_pd_quarter <- merge(rci_data_pd,stp_acre,by="id")
+
+rci_data_pd_quarter <- rci_data_pd_quarter[!rci_data_pd_quarter$id %in% ids_to_remove, ]
+
+
 
 rci_data_pd_quarter <- rci_data_pd_quarter %>%
   group_by(year) %>%
@@ -909,8 +970,7 @@ names(rci_data_pd)
 rci_crime_quarter_pd <- merge(aggregated_crime_quarter_pd,subset(rci_data_pd_quarter,neighborhood != 17 & year >= 2018),by.x = c("POLICE_GRI","Year"),by.y=c("id","year"))
 # rci_crime_quarter_pd <- merge(aggregated_crime_quarter_pd,rci_data_pd,by.x = c("POLICE_GRI","Year"),by.y=c("id","year"))
 
-hist(rci_crime_quarter_pd$crime_acre)
-hist(log(rci_crime_quarter_pd$crime_acre+1))
+
 
 # rci_crime_pd_filtered <- rci_crime_pd %>%
 #   filter(RCI_Group %in% c("Top 20%", "Bottom 20%"))
@@ -937,6 +997,10 @@ parallel_trends_quarter <- rci_crime_quarter_pd_filtered %>%
     year = first(Year),
     mean_crime = sum(crime_acre, na.rm = TRUE), .groups = "drop")
 
+hist(rci_crime_quarter_pd$crime_acre)
+hist(log(rci_crime_quarter_pd$crime_acre))
+
+
 ggplot(parallel_trends_quarter, aes(x = (Quarter), y = (mean_crime), group = treated, color = factor(treated))) +
   geom_line(size = 1.2) +
   geom_point(size = 2) +
@@ -953,9 +1017,25 @@ rci_crime_quarter_pd_filtered <- rci_crime_quarter_pd_filtered%>%
   mutate(event_time = round(as.numeric(Quarter - as.Date("2021-10-01")) / 90),1)
 
 
-event_study_model_quarter <- feols(log(crime_acre+1) ~ i(event_time, treated, ref = -1) |
+event_study_model_quarter <- feols(Count ~ i(event_time, treated, ref = -1) |
                                    as.factor(POLICE_GRI) + as.factor(Quarter), 
                                  data = rci_crime_quarter_pd_filtered)
+
+summary(event_study_model_quarter)
+event_study_model_quarter$collin.var
+iplot(event_study_model_quarter)
+
+event_study_model_quarter <- feols(log(Count) ~ i(event_time, treated, ref = -1) |
+                                    as.factor(POLICE_GRI) + as.factor(Quarter), 
+                                  data = rci_crime_quarter_pd_filtered)
+
+summary(event_study_model_quarter)
+event_study_model_quarter$collin.var
+iplot(event_study_model_quarter)
+
+event_study_model_quarter <- feols(log(crime_acre) ~ i(event_time, treated, ref = -1) |
+                                    as.factor(POLICE_GRI) + as.factor(Quarter), 
+                                  data = rci_crime_quarter_pd_filtered)
 
 summary(event_study_model_quarter)
 event_study_model_quarter$collin.var
@@ -968,11 +1048,18 @@ did_model <- feols(
 summary(did_model)
 
 did_model <- lm(
-  log(crime_acre+1) ~ post + treated + post * treated + as.factor(POLICE_GRI) + as.factor(Quarter),
+  log(Count) ~ post + treated + post * treated + as.factor(POLICE_GRI) + as.factor(Quarter),
   data = rci_crime_quarter_pd_filtered
 )
 summary(did_model)
-  # Is 2020 consistently spiked or 1 month for example?
+
+did_model <- lm(
+  Count ~ post + treated + post * treated + as.factor(POLICE_GRI) + as.factor(Quarter),
+  data = rci_crime_quarter_pd_filtered
+)
+summary(did_model)
+  
+# Is 2020 consistently spiked or 1 month for example?
 # Also break RCI down by quantiles or not percentiles
 
 
@@ -983,11 +1070,12 @@ summary(did_model)
   # 
 
 #### violent vs non-violent ----
-###### quartile analysis ----
+##### quartile analysis ----
 
 
 rci_data_pd_year <- merge(rci_data_pd,stp_acre,by="id")
 hist(rci_data_pd_year$RCI)
+rci_data_pd_year <- rci_data_pd_year[!rci_data_pd_year$id %in% ids_to_remove, ]
 
 
 ggplot(filter(rci_data_pd_year,year ==2020), aes(x = RCI)) +
@@ -1030,6 +1118,7 @@ rci_data_pd_year <- rci_data_pd_year %>%
 
 # Merge crime data
 rci_crime_year_pd_type<- merge(aggregated_crime_pd_type, rci_data_pd_year, by.x = c("POLICE_GRI", "Year"), by.y = c("id", "year"))
+rci_crime_year_pd_type <- merge(rci_crime_year_pd_type,traffic_stops_time,by.x = c("POLICE_GRI","Year"),by.y=c("POLICE_GRID_NUMBER","YEAR_OF_STOP"))
 
 # Filter for top and bottom groups
 rci_crime_year_pd_type <- rci_crime_year_pd_type %>%
@@ -1049,7 +1138,7 @@ parallel_trends_year_type <- rci_crime_pd_filtered_type %>%
   summarise(
     mean_crime = mean(Count, na.rm = TRUE),
     mean_crime_acre = mean(crime_acre, na.rm = TRUE),
-    mean_crime_acre_log = mean(log(crime_acre + 1), na.rm = TRUE),
+    mean_crime_log = mean(log(Count), na.rm = TRUE),
     .groups = "drop"
   )
 
@@ -1080,34 +1169,63 @@ ggplot(parallel_trends_year_type, aes(x = Year, y = mean_crime_acre, group = tre
   facet_wrap(~Crime_Type, scales = "free_y")+
   theme_minimal()
 
-ggplot(parallel_trends_year_type, aes(x = Year, y = mean_crime_acre_log, group = treated, color = factor(treated))) +
+ggplot(parallel_trends_year_type, aes(x = Year, y = mean_crime_log, group = treated, color = factor(treated))) +
   geom_line(size = 1.2) +
   geom_point(size = 2) +
   labs(
-    title = "Parallel Trends of Crime per Acre (Log)",
+    title = "Parallel Trends of Crime (Log)",
     x = "Year",
-    y = "Log Mean Crime per Acre",
+    y = "Log Mean Crime",
     color = "Treated"
   ) +
   scale_color_manual(values = c("0" = "blue", "1" = "red")) +
   facet_wrap(~Crime_Type, scales = "free_y")+
   theme_minimal()
 
+table(subset(rci_crime_pd_filtered_type,Crime_Type =="Violent")$Count==0)/nrow( subset(rci_crime_pd_filtered_type,Crime_Type =="Violent"))
+
+###### non-violent ----
+
 # Event study model
-event_study_model_year <- feols(crime_acre ~ i(Year, treated, ref = 2020) | as.factor(POLICE_GRI) + as.factor(Year), 
+event_study_model_year <- feols(Count ~ i(Year, treated, ref = 2020) | as.factor(POLICE_GRI) + as.factor(Year)+log(counts), 
                                 data = subset(rci_crime_pd_filtered_type,Crime_Type =="Non-Violent"))
 
 summary(event_study_model_year)
 iplot(event_study_model_year, order = "Year")
 
-event_study_model_year <- feols(log(crime_acre+1) ~ i(Year, treated, ref = 2020) | as.factor(POLICE_GRI) + as.factor(Year), 
-                                data = subset(rci_crime_pd_filtered_type,Crime_Type =="Violent"))
+residuals_ols <- resid(event_study_model_year)
 
-summary(event_study_model_year)
-iplot(event_study_model_year, order = "Year")
+ggplot(data.frame(fitted = fitted(event_study_model_year), residuals = residuals_ols), aes(x = fitted, y = residuals)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "loess", color = "red") +
+  theme_minimal() +
+  labs(title = "Residuals vs. Fitted Values (OLS)")
 
-event_study_model_year <- feols(log(Count+1) ~ i(Year, treated, ref = 2020) | as.factor(POLICE_GRI) + as.factor(Year), 
-                                data = subset(rci_crime_pd_filtered_type,Crime_Type =="Violent"))
+event_study_model_robust <- feols(Count ~ i(Year, treated, ref = 2020) | as.factor(POLICE_GRI) + as.factor(Year)+log(counts),
+                                  data = subset(rci_crime_pd_filtered_type, Crime_Type == "Non-Violent"),
+                                  vcov = "hetero")
+
+summary(event_study_model_robust)
+iplot(event_study_model_robust, order = "Year")
+
+
+
+event_study_model_year_log <- feols(log(Count) ~ i(Year, treated, ref = 2020) | as.factor(POLICE_GRI) + as.factor(Year)+log(counts), 
+                                data = subset(rci_crime_pd_filtered_type,Crime_Type =="Non-Violent"))
+
+summary(event_study_model_year_log)
+iplot(event_study_model_year_log, order = "Year")
+
+residuals_ols_log <- resid(event_study_model_year_log)
+
+ggplot(data.frame(fitted = fitted(event_study_model_year_log), residuals = residuals_ols_log), aes(x = fitted, y = residuals)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "loess", color = "red") +
+  theme_minimal() +
+  labs(title = "Residuals vs. Fitted Values (OLS-log)")
+
+event_study_model_year <- feols(log(crime_acre) ~ i(Year, treated, ref = 2020) | as.factor(POLICE_GRI) + as.factor(Year)+log(counts), 
+                                data = subset(rci_crime_pd_filtered_type,Crime_Type =="Non-Violent"))
 
 summary(event_study_model_year)
 iplot(event_study_model_year, order = "Year")
@@ -1118,6 +1236,71 @@ did_model <- feols(
 )
 summary(did_model)
 
+did_model <- lm(
+  log(Count) ~ post +treated + post * treated+ as.factor(POLICE_GRI) + as.factor(Year)+log(counts),
+  data = subset(rci_crime_pd_filtered_type,Crime_Type =="Non-Violent")
+)
+summary(did_model)
+
+###### violent ----
+
+# number of police by precint?
+# funding?
+
+# Event study model
+event_study_model_year <- feols(Count ~ i(Year, treated, ref = 2020) | as.factor(POLICE_GRI) + as.factor(Year)+log(counts), 
+                                data = subset(rci_crime_pd_filtered_type,Crime_Type =="Violent"))
+
+summary(event_study_model_year)
+iplot(event_study_model_year, order = "Year")
+
+residuals_ols <- resid(event_study_model_year)
+
+ggplot(data.frame(fitted = fitted(event_study_model_year), residuals = residuals_ols), aes(x = fitted, y = residuals)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "loess", color = "red") +
+  theme_minimal() +
+  labs(title = "Residuals vs. Fitted Values (OLS)")
+
+event_study_model_robust <- feols(Count ~ i(Year, treated, ref = 2020) | as.factor(POLICE_GRI) + as.factor(Year)+log(counts),
+                                  data = subset(rci_crime_pd_filtered_type, Crime_Type == "Violent"),
+                                  vcov = "hetero")
+
+summary(event_study_model_robust)
+iplot(event_study_model_robust, order = "Year")
+
+
+event_study_model_year_log <- feols(log(Count) ~ i(Year, treated, ref = 2020) | as.factor(POLICE_GRI) + as.factor(Year)+log(counts), 
+                                    data = subset(rci_crime_pd_filtered_type,Crime_Type =="Violent"))
+
+summary(event_study_model_year_log)
+iplot(event_study_model_year_log, order = "Year")
+
+residuals_ols_log <- resid(event_study_model_year_log)
+
+ggplot(data.frame(fitted = fitted(event_study_model_year_log), residuals = residuals_ols_log), aes(x = fitted, y = residuals)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "loess", color = "red") +
+  theme_minimal() +
+  labs(title = "Residuals vs. Fitted Values (OLS-log)")
+
+event_study_model_year <- feols(log(crime_acre) ~ i(Year, treated, ref = 2020) | as.factor(POLICE_GRI) + as.factor(Year)+log(counts), 
+                                data = subset(rci_crime_pd_filtered_type,Crime_Type =="Violent"))
+
+summary(event_study_model_year)
+iplot(event_study_model_year, order = "Year")
+
+did_model <- feols(
+  Count ~ post * treated,
+  data = subset(rci_crime_pd_filtered_type,Crime_Type =="Violent")
+)
+summary(did_model)
+
+did_model <- lm(
+  log(Count) ~ post +treated + post * treated+ as.factor(POLICE_GRI) + as.factor(Year)+log(counts),
+  data = subset(rci_crime_pd_filtered_type,Crime_Type =="Violent")
+)
+summary(did_model)
 
 ##### Month ----
 
@@ -1126,9 +1309,11 @@ names(rci_data_pd)
 hist(stp_acre$area_acres)
 
 rci_data_pd_month <- merge(rci_data_pd,stp_acre,by="id")
+rci_data_pd_month <- rci_data_pd_month[!rci_data_pd_month$id %in% ids_to_remove, ]
+rci_data_pd_month <- subset(rci_data_pd_month,neighborhood != 17 & year >= 2018)
 hist(rci_data_pd_month$RCI)
 
-ggplot(rci_data_pd_month, aes(x = RCI)) +
+ggplot(filter(rci_data_pd_month,year==2020), aes(x = RCI)) +
   geom_histogram(bins = 40) +
   scale_x_continuous() +
   labs(
@@ -1173,7 +1358,7 @@ rci_data_pd_month <- rci_data_pd_month %>%
   )
 
 
-rci_crime_month_pd_type <- merge(aggregated_crime_month_pd_type,subset(rci_data_pd_month,neighborhood != 17 & year >= 2018),by.x = c("POLICE_GRI","Year"),by.y=c("id","year"))
+rci_crime_month_pd_type <- merge(aggregated_crime_month_pd_type,rci_data_pd_month,by.x = c("POLICE_GRI","Year"),by.y=c("id","year"))
 # rci_crime_month_pd <- merge(aggregated_crime_month_pd,rci_data_pd,by.x = c("POLICE_GRI","Year"),by.y=c("id","year"))
 rci_crime_month_pd_type$crime_acre <- (rci_crime_month_pd_type$Count/rci_crime_month_pd_type$area_acres)*100
 hist(log(rci_crime_month_pd_type$crime_acre+1))
@@ -1223,7 +1408,7 @@ parallel_trends_month_type <- rci_crime_month_pd_filtered_type %>%
     year = first(Year),
     mean_crime = mean(Count, na.rm = TRUE),
     mean_crime_acre = mean(crime_acre, na.rm = TRUE),
-    mean_crime_acre_log = mean(log(crime_acre+1), na.rm = TRUE),
+    mean_crime_log = mean(log(Count), na.rm = TRUE),
     .groups = "drop")
 
 ggplot(parallel_trends_month_type, aes(x = (Month), y = (mean_crime), group = treated, color = factor(treated))) +
@@ -1250,10 +1435,9 @@ ggplot(parallel_trends_month_type, aes(x = (Month), y = (mean_crime_acre), group
   ) +
   scale_color_manual(values = c("0" = "blue", "1" = "red")) +
   facet_wrap(~Crime_Type,scales="free_y")+
-  
   theme_minimal()
 
-ggplot(parallel_trends_month_type, aes(x = (Month), y = (mean_crime_acre_log), group = treated, color = factor(treated))) +
+ggplot(parallel_trends_month_type, aes(x = (Month), y = (mean_crime_log), group = treated, color = factor(treated))) +
   geom_line(size = 1.2) +
   geom_point(size = 2) +
   labs(
@@ -1264,10 +1448,57 @@ ggplot(parallel_trends_month_type, aes(x = (Month), y = (mean_crime_acre_log), g
   ) +
   scale_color_manual(values = c("0" = "blue", "1" = "red")) +
   facet_wrap(~Crime_Type,scales="free_y")+
-  
   theme_minimal()
 
-event_study_model_month <- feols(crime_acre ~ i(Month, treated, ref = as.Date("2021-11-01")) |
+
+###### Non-Violent ----
+event_study_model_month <- feols(Count ~ i(Month, treated, ref = as.Date("2020-11-01")) |
+                                   as.factor(POLICE_GRI) + as.factor(Month), 
+                                 data = subset(rci_crime_month_pd_filtered_type,Crime_Type =="Non-Violent"))
+
+summary(event_study_model_month)
+event_study_model_month$collin.var
+iplot(event_study_model_month)
+# november 2021 - approved by voters
+# september 2022 - amended by voters
+# january 2023 - new changes to law
+
+
+event_study_model_month <- feols(log(Count) ~ i(Month, treated, ref = as.Date("2020-11-01")) |
+                                   as.factor(POLICE_GRI) + as.factor(Month), 
+                                 data = subset(rci_crime_month_pd_filtered_type,Crime_Type =="Non-Violent"))
+
+summary(event_study_model_month)
+event_study_model_month$collin.var
+iplot(event_study_model_month)
+
+#12.584546
+
+# did_model <- feols(
+#   log(Count) ~ post * treated| as.factor(POLICE_GRI) + as.factor(Month),
+#   data = subset(rci_crime_month_pd_filtered_type,Crime_Type =="Non-Violent")
+# )
+# did_model$collin.var
+# summary(did_model)
+
+did_model <- lm(
+  Count ~post + treated+ post * treated + as.factor(POLICE_GRI) + as.factor(Month),
+  data = subset(rci_crime_month_pd_filtered_type,Crime_Type =="Non-Violent")
+)
+summary(did_model)
+robust_se<-vcovHC(did_model, type = "HC3")
+coeftest(did_model, vcov = robust_se)
+
+did_model <- lm(
+  log(Count) ~post + treated+ post * treated + as.factor(POLICE_GRI) + as.factor(Month),
+  data = subset(rci_crime_month_pd_filtered_type,Crime_Type =="Non-Violent")
+)
+summary(did_model)
+robust_se<-vcovHC(did_model, type = "HC3")
+coeftest(did_model, vcov = robust_se)
+
+###### Violent ----
+event_study_model_month <- feols(Count ~ i(Month, treated, ref = as.Date("2020-11-01")) |
                                    as.factor(POLICE_GRI) + as.factor(Month), 
                                  data = subset(rci_crime_month_pd_filtered_type,Crime_Type =="Violent"))
 
@@ -1278,25 +1509,46 @@ iplot(event_study_model_month)
 # september 2022 - amended by voters
 # january 2023 - new changes to law
 
-#12.584546
 
-did_model <- feols(
-  log(Count+1) ~ post * treated| as.factor(POLICE_GRI) + as.factor(Month),
-  data = subset(rci_crime_month_pd_filtered_type,Crime_Type =="Non-Violent")
-)
-did_model$collin.var
-summary(did_model)
+event_study_model_month <- feols(log(Count) ~ i(Month, treated, ref = as.Date("2020-11-01")) |
+                                   as.factor(POLICE_GRI) + as.factor(Month), 
+                                 data = subset(rci_crime_month_pd_filtered_type,Crime_Type =="Violent"))
+
+summary(event_study_model_month)
+event_study_model_month$collin.var
+iplot(event_study_model_month)
+
+#12.584546
+# 
+# did_model <- feols(
+#   log(Count) ~ post * treated| as.factor(POLICE_GRI) + as.factor(Month),
+#   data = subset(rci_crime_month_pd_filtered_type,Crime_Type =="Violent")
+# )
+# did_model$collin.var
+# summary(did_model)
 
 did_model <- lm(
-  crime_acre ~post + treated+ post * treated + as.factor(POLICE_GRI) + as.factor(Month),
-  data = subset(rci_crime_month_pd_filtered_type,Crime_Type =="Non-Violent")
+  Count ~post + treated+ post * treated + as.factor(POLICE_GRI) + as.factor(Month),
+  data = subset(rci_crime_month_pd_filtered_type,Crime_Type =="Violent")
 )
 summary(did_model)
 robust_se<-vcovHC(did_model, type = "HC3")
 coeftest(did_model, vcov = robust_se)
 
+
+did_model <- lm(
+  log(Count) ~post + treated+ post * treated + as.factor(POLICE_GRI) + as.factor(Month),
+  data = subset(rci_crime_month_pd_filtered_type,Crime_Type =="Violent")
+)
+summary(did_model)
+robust_se<-vcovHC(did_model, type = "HC3")
+coeftest(did_model, vcov = robust_se)
+
+
 ##### Quarter ----
 rci_data_pd_quarter <- merge(rci_data_pd,stp_acre,by="id")
+rci_data_pd_quarter <- rci_data_pd_quarter[!rci_data_pd_month$id %in% ids_to_remove, ]
+rci_data_pd_quarter <- subset(rci_data_pd_quarter,neighborhood != 17 & year >= 2018)
 
 rci_data_pd_quarter <- rci_data_pd_quarter %>%
   group_by(year) %>%
@@ -1317,38 +1569,35 @@ hist(rci_2021$RCI)
 table(rci_2021$RCI)
 names(aggregated_crime_quarter_pd)
 names(rci_data_pd)
-rci_crime_quarter_pd <- merge(aggregated_crime_quarter_pd,subset(rci_data_pd_quarter,neighborhood != 17 & year >= 2018),by.x = c("POLICE_GRI","Year"),by.y=c("id","year"))
+rci_crime_quarter_pd_type <- merge(aggregated_crime_quarter_pd_type,subset(rci_data_pd_quarter,neighborhood != 17 & year >= 2018),by.x = c("POLICE_GRI","Year"),by.y=c("id","year"))
 # rci_crime_quarter_pd <- merge(aggregated_crime_quarter_pd,rci_data_pd,by.x = c("POLICE_GRI","Year"),by.y=c("id","year"))
-
-hist(rci_crime_quarter_pd$crime_acre)
-hist(log(rci_crime_quarter_pd$crime_acre+1))
 
 # rci_crime_pd_filtered <- rci_crime_pd %>%
 #   filter(RCI_Group %in% c("Top 20%", "Bottom 20%"))
-rci_crime_quarter_pd$post <- ifelse(rci_crime_quarter_pd$Year >2020,1,0)
-top_20_2020 <- unique(rci_crime_quarter_pd$POLICE_GRI[rci_crime_quarter_pd$Year == 2020 & rci_crime_quarter_pd$RCI_Group == "Top"])
+rci_crime_quarter_pd_type$post <- ifelse(rci_crime_quarter_pd_type$Year >2020,1,0)
+top_20_2020 <- unique(rci_crime_quarter_pd_type$POLICE_GRI[rci_crime_quarter_pd_type$Year == 2020 & rci_crime_quarter_pd_type$RCI_Group == "Top"])
 top_20_2020
 
-rci_crime_quarter_pd <- rci_crime_quarter_pd %>%
+rci_crime_quarter_pd_type <- rci_crime_quarter_pd_type %>%
   filter(RCI_Group %in% c("Top", "Bottom")) %>%
   mutate(crime_acre = (Count / area_acres) * 100)
 
-rci_crime_quarter_pd_filtered <- rci_crime_quarter_pd %>%
+rci_crime_quarter_pd_filtered_type <- rci_crime_quarter_pd_type %>%
   mutate(treated = ifelse(POLICE_GRI %in% top_20_2020, 1, 0))
 
 
 
-rci_crime_quarter_pd_filtered <- rci_crime_quarter_pd_filtered %>%
+rci_crime_quarter_pd_filtered_type <- rci_crime_quarter_pd_filtered_type %>%
   mutate(gf = ifelse(Year >= 2020 & Year <=2022, 1, 0),
          reporting_diff = ifelse(Year < 2018, 1, 0))
 
-parallel_trends_quarter <- rci_crime_quarter_pd_filtered %>%
-  group_by(Quarter, treated) %>%
+parallel_trends_quarter_type <- rci_crime_quarter_pd_filtered_type %>%
+  group_by(Quarter, treated,Crime_Type) %>%
   summarise(
     year = first(Year),
     mean_crime = sum(crime_acre, na.rm = TRUE), .groups = "drop")
 
-ggplot(parallel_trends_quarter, aes(x = (Quarter), y = (mean_crime), group = treated, color = factor(treated))) +
+ggplot(parallel_trends_quarter_type, aes(x = (Quarter), y = (mean_crime), group = treated, color = factor(treated))) +
   geom_line(size = 1.2) +
   geom_point(size = 2) +
   labs(
@@ -1358,15 +1607,24 @@ ggplot(parallel_trends_quarter, aes(x = (Quarter), y = (mean_crime), group = tre
     color = "Treated"
   ) +
   scale_color_manual(values = c("0" = "blue", "1" = "red")) +
+  facet_wrap(~Crime_Type,scales="free_y")+
   theme_minimal()
 
-rci_crime_quarter_pd_filtered <- rci_crime_quarter_pd_filtered%>%
+rci_crime_quarter_pd_filtered_type <- rci_crime_quarter_pd_filtered_type%>%
   mutate(event_time = round(as.numeric(Quarter - as.Date("2021-10-01")) / 90),1)
 
-
-event_study_model_quarter <- feols(log(crime_acre+1) ~ i(event_time, treated, ref = -1) |
+###### Non-Violent ----
+event_study_model_quarter <- feols(Count ~ i(event_time, treated, ref = -1) |
                                      as.factor(POLICE_GRI) + as.factor(Quarter), 
-                                   data = rci_crime_quarter_pd_filtered)
+                                   data = subset(rci_crime_quarter_pd_filtered_type,Crime_Type =="Non-Violent"))
+
+summary(event_study_model_quarter)
+event_study_model_quarter$collin.var
+iplot(event_study_model_quarter)
+
+event_study_model_quarter <- feols(log(Count) ~ i(event_time, treated, ref = -1) |
+                                     as.factor(POLICE_GRI) + as.factor(Quarter), 
+                                   data = subset(rci_crime_quarter_pd_filtered_type,Crime_Type =="Non-Violent"))
 
 summary(event_study_model_quarter)
 event_study_model_quarter$collin.var
@@ -1379,10 +1637,54 @@ did_model <- feols(
 summary(did_model)
 
 did_model <- lm(
-  log(crime_acre+1) ~ post + treated + post * treated + as.factor(POLICE_GRI) + as.factor(Quarter),
-  data = rci_crime_quarter_pd_filtered
+  Count ~ post + treated + post * treated + as.factor(POLICE_GRI) + as.factor(Quarter),
+  data = subset(rci_crime_quarter_pd_filtered_type,Crime_Type =="Non-Violent")
 )
 summary(did_model)
+
+did_model <- lm(
+  log(Count) ~ post + treated + post * treated + as.factor(POLICE_GRI) + as.factor(Quarter),
+  data = subset(rci_crime_quarter_pd_filtered_type,Crime_Type =="Non-Violent")
+)
+summary(did_model)
+
+###### Violent ----
+event_study_model_quarter <- feols(Count ~ i(event_time, treated, ref = -1) |
+                                     as.factor(POLICE_GRI) + as.factor(Quarter), 
+                                   data = subset(rci_crime_quarter_pd_filtered_type,Crime_Type =="Violent"))
+
+summary(event_study_model_quarter)
+event_study_model_quarter$collin.var
+iplot(event_study_model_quarter)
+
+event_study_model_quarter <- feols(log(Count) ~ i(event_time, treated, ref = -1) |
+                                     as.factor(POLICE_GRI) + as.factor(Quarter), 
+                                   data = subset(rci_crime_quarter_pd_filtered_type,Crime_Type =="Violent"))
+
+summary(event_study_model_quarter)
+event_study_model_quarter$collin.var
+iplot(event_study_model_quarter)
+
+did_model <- feols(
+  Count ~ post * treated,
+  data = subset(rci_crime_quarter_pd_filtered_type,Crime_Type =="Violent")
+)
+summary(did_model)
+
+did_model <- lm(
+  Count ~ post + treated + post * treated + as.factor(POLICE_GRI) + as.factor(Quarter),
+  data = subset(rci_crime_quarter_pd_filtered_type,Crime_Type =="Violent")
+)
+summary(did_model)
+
+did_model <- lm(
+  log(Count) ~ post + treated + post * treated + as.factor(POLICE_GRI) + as.factor(Quarter),
+  data = subset(rci_crime_quarter_pd_filtered_type,Crime_Type =="Violent")
+)
+summary(did_model)
+
+
+
 # Is 2020 consistently spiked or 1 month for example?
 # Also break RCI down by quantiles or not percentiles
 
