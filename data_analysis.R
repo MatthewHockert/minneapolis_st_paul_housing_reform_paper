@@ -589,7 +589,9 @@ rci_data_pd_year <- merge(rci_data_pd,stp_acre,by="id")
 hist(rci_data_pd_year$RCI)
 length(unique(rci_data_pd_year$id))
 
+
 ids_to_remove <- rci_data_pd$id[rci_data_pd$year == 2020 & rci_data_pd$RCI == 0]
+ids_to_remove
 rci_data_pd_year <- rci_data_pd_year[!rci_data_pd_year$id %in% ids_to_remove, ]
 
 
@@ -602,6 +604,7 @@ ggplot(filter(rci_data_pd_year,year ==2020), aes(x = RCI)) +
     y = "Frequency"
   )
 
+table(rci_data_pd_year$year)
 
 
 # Calculate RCI percentiles by year
@@ -643,12 +646,22 @@ table(filter(rci_data_pd_year, year == 2020)$RCI_Group)
 
 # Merge crime data
 rci_crime_year_pd<- merge(aggregated_crime_pd, rci_data_pd_year, by.x = c("POLICE_GRI", "Year"), by.y = c("id", "year"))
-rci_crime_year_pd <- merge(rci_crime_year_pd,traffic_stops_time,by.x = c("POLICE_GRI","Year"),by.y=c("POLICE_GRID_NUMBER","YEAR_OF_STOP"))
-plot(test_merge$RCI,test_merge$counts)
-hist(test_merge$counts)
-plot(log(test_merge$Count),log(test_merge$counts))
+rci_crime_year_pd <- merge(rci_crime_year_pd,traffic_stops_year,by.x = c("POLICE_GRI","Year"),by.y=c("POLICE_GRID_NUMBER","YEAR_OF_STOP"))
 
-length(unique(test_merge$POLICE_GRI))
+names(rci_crime_year_pd)
+rci_crime_year_pd <- rci_crime_year_pd %>%
+  arrange(POLICE_GRI, Year) %>%                     # Ensure data is sorted correctly
+  group_by(POLICE_GRI) %>%                          # Group by police district
+  mutate(police_int_lag = lag(police_int, n = 1)) %>%  # Create lagged variable
+  ungroup()
+
+# rci_crime_year_pd$police_int <- as.numeric(rci_crime_year_pd$police_int)
+plot(rci_crime_year_pd$RCI,rci_crime_year_pd$police_int)
+hist(rci_crime_year_pd$police_int)
+plot(log(rci_crime_year_pd$Count),log(rci_crime_year_pd$police_int))
+plot(log(rci_crime_year_pd$police_int),log(rci_crime_year_pd$Count))
+
+length(unique(rci_crime_year_pd$POLICE_GRI))
 
 # Filter for top and bottom groups
 rci_crime_year_pd <- rci_crime_year_pd %>%
@@ -722,23 +735,23 @@ ggplot(parallel_trends_year, aes(x = Year, y = mean_crime_acre_log, group = trea
   theme_minimal()
 
 # Event study model
-event_study_model_year <- feols(Count ~ i(Year, treated, ref = 2020) | as.factor(POLICE_GRI) + as.factor(Year)+log(counts), 
+event_study_model_year <- feols(Count ~ i(Year, treated, ref = 2020) + log(police_int_lag)| as.factor(POLICE_GRI) + as.factor(Year), 
                                 data = rci_crime_pd_filtered)
 
 summary(event_study_model_year)
 iplot(event_study_model_year, order = "Year")
 
-event_study_model_year <- feols(log(Count) ~ i(Year, treated, ref = 2020) | as.factor(POLICE_GRI) + as.factor(Year)+log(counts), 
+event_study_model_year <- feols(log(Count) ~ i(Year, treated, ref = 2020)| as.factor(POLICE_GRI) + as.factor(Year), 
                                 data = rci_crime_pd_filtered)
 
 summary(event_study_model_year)
 iplot(event_study_model_year, order = "Year")
 
-did_model <- feols(
-  Count ~ post * treated,
-  data = rci_crime_pd_filtered
-)
-summary(did_model)
+# did_model <- feols(
+#   Count ~ post * treated,
+#   data = rci_crime_pd_filtered
+# )
+# summary(did_model)
 
 did_model <- lm(
   log(Count) ~ post * treated + post +treated+ as.factor(POLICE_GRI) + as.factor(Year)+log(counts),
@@ -814,6 +827,13 @@ hist(log(rci_crime_month_pd$crime_acre))
 names(rci_crime_month_pd)
 names(traffic_stops_month)
 rci_crime_month_pd <- merge(rci_crime_month_pd,traffic_stops_month,by = c("POLICE_GRI","Month"))
+
+names(rci_crime_month_pd)
+rci_crime_month_pd <- rci_crime_month_pd %>%
+  arrange(POLICE_GRI,Year, Month) %>%                     # Ensure data is sorted correctly
+  group_by(POLICE_GRI) %>%                          # Group by police district
+  mutate(police_int_lag = lag(police_int, n = 1)) %>%  # Create lagged variable
+  ungroup()
 
 # rci_crime_pd_filtered <- rci_crime_pd %>%
 #   filter(RCI_Group %in% c("Top 20%", "Bottom 20%"))
@@ -899,16 +919,16 @@ ggplot(parallel_trends_month, aes(x = (Month), y = (mean_crime_acre_log), group 
   scale_color_manual(values = c("0" = "blue", "1" = "red")) +
   theme_minimal()
 
-event_study_model_month <- feols(Count ~ i(Month, treated, ref = as.Date("2020-11-01")) |
-                                   as.factor(POLICE_GRI) + as.factor(Month)+log(counts), 
+event_study_model_month <- feols(Count ~ i(Month, treated, ref = as.Date("2020-11-01")) + log(police_int)|
+                                   as.factor(POLICE_GRI) + as.factor(Month), 
                                  data = rci_crime_month_pd_filtered)
 
 summary(event_study_model_month)
 event_study_model_month$collin.var
 iplot(event_study_model_month)
 
-event_study_model_month <- feols(log(Count) ~ i(Month, treated, ref = as.Date("2020-11-01")) |
-                                   as.factor(POLICE_GRI) + as.factor(Month)+log(counts), 
+event_study_model_month <- feols(log(Count) ~ i(Month, treated, ref = as.Date("2020-11-01")) + log(police_int)|
+                                   as.factor(POLICE_GRI) + as.factor(Month), 
                                  data = rci_crime_month_pd_filtered)
 
 summary(event_study_model_month)
@@ -933,7 +953,7 @@ table(rci_crime_month_pd_filtered$Count == 0)
 # summary(did_model)
 
 did_model <- lm(
-  log(Count) ~ post + treated+ post * treated + as.factor(POLICE_GRI) + as.factor(Month)+log(counts),
+  log(Count) ~ post + treated+ post * treated + + log(police_int)+as.factor(POLICE_GRI) + as.factor(Month),
   data = rci_crime_month_pd_filtered
 )
 summary(did_model)
@@ -967,9 +987,16 @@ hist(rci_2021$RCI)
 table(rci_2021$RCI)
 names(aggregated_crime_quarter_pd)
 names(rci_data_pd)
+names(rci_crime_quarter_pd)
+names(traffic_stops_quarter)
 rci_crime_quarter_pd <- merge(aggregated_crime_quarter_pd,subset(rci_data_pd_quarter,neighborhood != 17 & year >= 2018),by.x = c("POLICE_GRI","Year"),by.y=c("id","year"))
-# rci_crime_quarter_pd <- merge(aggregated_crime_quarter_pd,rci_data_pd,by.x = c("POLICE_GRI","Year"),by.y=c("id","year"))
-
+rci_crime_quarter_pd <- merge(rci_crime_quarter_pd,traffic_stops_quarter,by = c("POLICE_GRI","Year","Quarter"))
+names(rci_crime_quarter_pd)
+rci_crime_quarter_pd <- rci_crime_quarter_pd %>%
+  arrange(POLICE_GRI, Year,Quarter) %>%                     # Ensure data is sorted correctly
+  group_by(POLICE_GRI) %>%                          # Group by police district
+  mutate(police_int_lag = lag(police_int, n = 1)) %>%  # Create lagged variable
+  ungroup()
 
 
 # rci_crime_pd_filtered <- rci_crime_pd %>%
@@ -1017,7 +1044,7 @@ rci_crime_quarter_pd_filtered <- rci_crime_quarter_pd_filtered%>%
   mutate(event_time = round(as.numeric(Quarter - as.Date("2021-10-01")) / 90),1)
 
 
-event_study_model_quarter <- feols(Count ~ i(event_time, treated, ref = -1) |
+event_study_model_quarter <- feols(Count ~ i(event_time, treated, ref = -1) + log(police_int_lag)|
                                    as.factor(POLICE_GRI) + as.factor(Quarter), 
                                  data = rci_crime_quarter_pd_filtered)
 
@@ -1025,7 +1052,7 @@ summary(event_study_model_quarter)
 event_study_model_quarter$collin.var
 iplot(event_study_model_quarter)
 
-event_study_model_quarter <- feols(log(Count) ~ i(event_time, treated, ref = -1) |
+event_study_model_quarter <- feols(log(Count) ~ i(event_time, treated, ref = -1) + log(police_int_lag)|
                                     as.factor(POLICE_GRI) + as.factor(Quarter), 
                                   data = rci_crime_quarter_pd_filtered)
 

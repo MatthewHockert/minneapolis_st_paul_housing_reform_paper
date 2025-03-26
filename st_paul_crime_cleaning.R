@@ -2,7 +2,8 @@ library(sf)
 library(dplyr)
 library(lubridate)
 library(ggplot2)
-
+library(tidyr)
+library(stringr)
 
 crime <- st_read("/Users/matthewhockert/Desktop/Personal Info/st_paul_housing_crime/Crime_Incident_Report/Crime_Incident_Report.shp")
 crime <- st_drop_geometry(crime)
@@ -248,7 +249,7 @@ aggregated_crime_quarter_pd <- crime %>%
 
 aggregated_crime_quarter_pd <- aggregated_crime_quarter_pd %>%
   mutate(Year = year(Quarter)) 
-
+names(aggregated_crime_quarter_pd)
 # Step 2: Plot Percent Change Over Time by Quarter
 ggplot(aggregated_crime_quarter_pd, 
        aes(x = Quarter, y = Percent_Change, color = as.factor(POLICE_GRI), group = POLICE_GRI)) +
@@ -290,11 +291,11 @@ length(unique(traffic_stops$POLICE_GRID_NUMBER))
 ##### Year ----
 traffic_stops_year <- traffic_stops %>%
   group_by(YEAR_OF_STOP, POLICE_GRID_NUMBER) %>%
-  summarize(counts = n_distinct(ObjectId), .groups = "drop")
+  summarize(police_int = n_distinct(ObjectId), .groups = "drop")
 traffic_stops_year
 
 ggplot(traffic_stops_year, 
-      aes(x = as.character(YEAR_OF_STOP), y = counts, color = as.factor(POLICE_GRID_NUMBER), group = POLICE_GRID_NUMBER)) +
+      aes(x = as.character(YEAR_OF_STOP), y = police_int, color = as.factor(POLICE_GRID_NUMBER), group = POLICE_GRID_NUMBER)) +
   geom_line() +
   geom_vline(xintercept = ("2023"), linetype = "dashed", color = "red") +  # Dashed line for 2023
   geom_vline(xintercept = ("2022"), linetype = "dashed", color = "black") + # Dashed line for 2022
@@ -325,17 +326,17 @@ traffic_stops_month <- traffic_stops %>%
   ) %>%
   filter(!is.na(MONTH_OF_STOP) & !is.na(YEAR_OF_STOP)) %>%  # Remove rows with missing values
   group_by(YEAR_OF_STOP, MONTH_OF_STOP, POLICE_GRID_NUMBER) %>%
-  summarize(counts = n_distinct(ObjectId), .groups = "drop") %>%
+  summarize(police_int = n_distinct(ObjectId), .groups = "drop") %>%
   mutate(
     Month = as.Date(sprintf("%04d-%02d-01", YEAR_OF_STOP, MONTH_OF_STOP)),  # Proper date format
     POLICE_GRI = POLICE_GRID_NUMBER  # Rename to match the other dataset
   ) %>%
-  select(Month, POLICE_GRI, counts)  # Keep only necessary columns
+  select(Month, POLICE_GRI, police_int)  # Keep only necessary columns
 
-sum(traffic_stops_month$counts==0)
+sum(traffic_stops_month$police_int==0)
 # Merge with rci_crime_month_pd
 ggplot(traffic_stops_month, 
-       aes(x = (Month), y = counts, color = as.factor(POLICE_GRI), group = POLICE_GRI)) +
+       aes(x = (Month), y = police_int, color = as.factor(POLICE_GRI), group = POLICE_GRI)) +
   geom_line() +
   geom_vline(xintercept = as.Date("2023-01-01"), linetype = "dashed", color = "red") +  # Dashed line for 2023
   geom_vline(xintercept = as.Date("2022-01-01"), linetype = "dashed", color = "black") + # Dashed line for 2022
@@ -357,6 +358,61 @@ length(unique(merged_data$POLICE_GRI))
 summary(lm(log(Count)~log(counts)+as.factor(POLICE_GRI)+as.factor(Year),merged_data))
 
 str(rci_crime_month_pd)
+
+##### Quarter----
+# Aggregate traffic stops by quarter
+traffic_stops_quarter <- traffic_stops %>%
+  mutate(
+    MONTH_OF_STOP = str_trim(MONTH_OF_STOP),
+    MONTH_NUM = match(toupper(MONTH_OF_STOP), toupper(month.name)),
+    Year = as.numeric(YEAR_OF_STOP),
+    Quarter = quarter(make_date(YEAR_OF_STOP, MONTH_NUM, 1), with_year = TRUE)
+  ) %>%
+  filter(!is.na(MONTH_NUM), !is.na(Year)) %>%
+  group_by(Quarter,Year, POLICE_GRID_NUMBER) %>%
+  summarize(police_int = n_distinct(ObjectId), .groups = "drop") %>%
+  mutate(
+    Quarter = yq(Quarter),
+    POLICE_GRI = POLICE_GRID_NUMBER
+  ) %>%
+  select(Quarter,Year, POLICE_GRI, police_int)
+
+# Check for zeros
+sum(traffic_stops_quarter$police_int == 0)
+
+# Merge quarterly data
+names(rci_crime_quarter_pd)
+
+merged_data <- merge(rci_crime_quarter_pd, traffic_stops_quarter,
+                     by.x = c("Quarter", "POLICE_GRI"),
+                     by.y = c("Quarter", "POLICE_GRI"))
+
+# Visualization by Quarter
+ggplot(traffic_stops_quarter, 
+       aes(x = Quarter, y = police_int, color = as.factor(POLICE_GRI), group = POLICE_GRI)) +
+  geom_line() +
+  geom_vline(xintercept = as.Date("2023-01-01"), linetype = "dashed", color = "red") +
+  geom_vline(xintercept = as.Date("2022-01-01"), linetype = "dashed", color = "black") +
+  geom_vline(xintercept = as.Date("2020-01-01"), linetype = "solid", color = "black") +
+  labs(title = "Incident Counts Over Time by Quarter",
+       x = "Year",
+       y = "Incident Counts") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+names(merged_data)
+# Exploratory plots
+plot(merged_data$RCI, merged_data$counts)
+hist(merged_data$counts)
+plot(log(merged_data$police_int), log(merged_data$Count))
+
+# Unique POLICE_GRI counts
+length(unique(merged_data$POLICE_GRI))
+
+# Regression summary
+summary(lm(log(Count) ~ log(police_int) + as.factor(POLICE_GRI) + as.factor(Year), data = merged_data))
+
+
+
 #
 #### geolocate ####
 

@@ -82,6 +82,7 @@ beep()
 
 mapview(st_paul)
 st_paul <- subset(ramsey_data, CITY_MERGED %in% c("Saint Paul"))
+st_paul_df<- st_drop_geometry(st_paul)
 #plot(st_paul$geometry)
 validity_check <- st_is_valid(st_paul)
 st_paul <- st_paul[validity_check, ]
