@@ -59,15 +59,19 @@ ggplot(rent_long_rci_zip, aes(x = RCI, y = log(AvgRent))) +
        y = "Avg. Rent") +
   # facet_wrap(~Year)+
   theme_minimal()
-
+#%>% filter(Year %in% c("2021","2022"))
 ggplot(rent_long_rci_zip, aes(x = RCI, y = PercentChangeAvgRent)) +
   geom_point(alpha = 0.6, color = "blue") + 
   geom_smooth(method = "lm", color = "red")+
   labs(title = "Scatter Plot of Rent vs RCI",
        x = "Rent Control Intensity (RCI)",
        y = "PercentChangeAvgRent") +
-  # facet_wrap(~Year)
+  facet_wrap(~Year)
   theme_minimal()
+  
+rent_long_rci_zip %>% filter(Year == 2022 & RegionName %in% c("55101","55102","55104","55105"))%>%
+  select(RegionName,RCI,PercentChangeAvgRent)%>%
+  arrange(RCI)
 
 rent_long_rci_zip_sub <- rent_long_rci_zip %>%
   filter(Year %in% c(2021, 2022)) %>%
@@ -672,7 +676,7 @@ rci_crime_year_pd <- rci_crime_year_pd %>%
 top_20_2020 <- unique(rci_crime_year_pd$POLICE_GRI[rci_crime_year_pd$Year == 2020 & rci_crime_year_pd$RCI_Group == "Top"])
 rci_crime_pd_filtered <- rci_crime_year_pd %>%
   mutate(treated = ifelse(POLICE_GRI %in% top_20_2020, 1, 0))%>%
-  filter(Year > 2017)
+  filter(Year > 2014)
 rci_crime_pd_filtered$post <- ifelse(rci_crime_pd_filtered$Year >2020,1,0)
 
 
@@ -693,7 +697,7 @@ parallel_trends_year <- rci_crime_pd_filtered %>%
   summarise(
     mean_crime = mean(Count, na.rm = TRUE),
     mean_crime_acre = mean(crime_acre, na.rm = TRUE),
-    mean_crime_acre_log = mean(log(crime_acre), na.rm = TRUE),
+    mean_crime_log = mean(log(Count), na.rm = TRUE),
     .groups = "drop"
   )
 
@@ -722,13 +726,13 @@ ggplot(parallel_trends_year, aes(x = Year, y = mean_crime_acre, group = treated,
   scale_color_manual(values = c("0" = "blue", "1" = "red")) +
   theme_minimal()
 
-ggplot(parallel_trends_year, aes(x = Year, y = mean_crime_acre_log, group = treated, color = factor(treated))) +
+ggplot(parallel_trends_year, aes(x = Year, y = mean_crime_log, group = treated, color = factor(treated))) +
   geom_line(size = 1.2) +
   geom_point(size = 2) +
   labs(
-    title = "Parallel Trends of Crime per Acre (Log)",
+    title = "Parallel Trends of Crime count (Log)",
     x = "Year",
-    y = "Log Mean Crime per Acre",
+    y = "Log Mean Crime Count",
     color = "Treated"
   ) +
   scale_color_manual(values = c("0" = "blue", "1" = "red")) +
@@ -739,13 +743,13 @@ event_study_model_year <- feols(Count ~ i(Year, treated, ref = 2020) + log(polic
                                 data = rci_crime_pd_filtered)
 
 summary(event_study_model_year)
-iplot(event_study_model_year, order = "Year")
+iplot(event_study_model_year, order = "Year",main= "crime count")
 
 event_study_model_year <- feols(log(Count) ~ i(Year, treated, ref = 2020)| as.factor(POLICE_GRI) + as.factor(Year), 
                                 data = rci_crime_pd_filtered)
 
 summary(event_study_model_year)
-iplot(event_study_model_year, order = "Year")
+iplot(event_study_model_year, order = "Year", main= "log crime count")
 
 # did_model <- feols(
 #   Count ~ post * treated,
@@ -803,8 +807,8 @@ names(rci_data_pd_month)
 rci_percentiles <- rci_data_pd_month %>%
   group_by(year) %>%
   summarise(
-    rci_percentiles_hi = quantile(RCI, probs = .7, na.rm = TRUE),
-    rci_percentiles_lo = quantile(RCI, probs = .3, na.rm = TRUE),
+    rci_percentiles_hi = quantile(RCI, probs = .8, na.rm = TRUE),
+    rci_percentiles_lo = quantile(RCI, probs = .2, na.rm = TRUE),
     .groups = "drop"
   )
 
@@ -820,7 +824,7 @@ rci_data_pd_month <- rci_data_pd_month %>%
   )
 
 
-rci_crime_month_pd <- merge(aggregated_crime_month_pd,subset(rci_data_pd_month,neighborhood != 17 & year >= 2018),by.x = c("POLICE_GRI","Year"),by.y=c("id","year"))
+rci_crime_month_pd <- merge(aggregated_crime_month_pd,subset(rci_data_pd_month,neighborhood != 17 & year >= 2014),by.x = c("POLICE_GRI","Year"),by.y=c("id","year"))
 # rci_crime_month_pd <- merge(aggregated_crime_month_pd,rci_data_pd,by.x = c("POLICE_GRI","Year"),by.y=c("id","year"))
 rci_crime_month_pd$crime_acre <- (rci_crime_month_pd$Count/rci_crime_month_pd$area_acres)*100
 hist(log(rci_crime_month_pd$crime_acre))
@@ -867,9 +871,9 @@ ggplot() +
 rci_crime_month_pd_filtered <- rci_crime_month_pd %>%
   mutate(treated = ifelse(POLICE_GRI %in% top_20_2020, 1, 0))
 
-rci_crime_month_pd_filtered <- rci_crime_month_pd_filtered %>%
-  mutate(gf = ifelse(Year >= 2020 & Year <=2022, 1, 0),
-         reporting_diff = ifelse(Year < 2018, 1, 0))
+# rci_crime_month_pd_filtered <- rci_crime_month_pd_filtered %>%
+#   mutate(gf = ifelse(Year >= 2020 & Year <=2022, 1, 0),
+#          reporting_diff = ifelse(Year < 2018, 1, 0))
 
 hist(rci_crime_month_pd_filtered$crime_acre)
 hist(log(rci_crime_month_pd_filtered$crime_acre))
@@ -919,8 +923,8 @@ ggplot(parallel_trends_month, aes(x = (Month), y = (mean_crime_acre_log), group 
   scale_color_manual(values = c("0" = "blue", "1" = "red")) +
   theme_minimal()
 
-event_study_model_month <- feols(Count ~ i(Month, treated, ref = as.Date("2020-11-01")) + log(police_int)|
-                                   as.factor(POLICE_GRI) + as.factor(Month), 
+event_study_model_month <- feols(Count ~ i(Month, treated, ref = as.Date("2020-11-01")) |
+                                   as.factor(POLICE_GRI) + as.factor(Month)+ as.factor(Year), 
                                  data = rci_crime_month_pd_filtered)
 
 summary(event_study_model_month)
@@ -1156,7 +1160,7 @@ rci_crime_year_pd_type <- rci_crime_year_pd_type %>%
 top_20_2020 <- unique(rci_crime_year_pd_type$POLICE_GRI[rci_crime_year_pd_type$Year == 2020 & rci_crime_year_pd_type$RCI_Group == "Top"])
 rci_crime_pd_filtered_type <- rci_crime_year_pd_type %>%
   mutate(treated = ifelse(POLICE_GRI %in% top_20_2020, 1, 0))%>%
-  filter(Year > 2017)
+  filter(Year > 2014)
 rci_crime_pd_filtered_type$post <- ifelse(rci_crime_pd_filtered_type$Year >2020,1,0)
 
 # Parallel trends analysis
